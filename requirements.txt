@@ -1,0 +1,32 @@
+# PDF 처리 라이브러리
+pdfplumber==0.11.4        # 정확한 텍스트 추출과 위치 정보
+PyMuPDF==1.24.14          # 빠른 PDF 처리 (fitz)
+pypdfium2>=4.26.0         # 추가 PDF 엔진
+PyPDF2>=3.0.0             # 호환성용 PDF 엔진
+
+# Upstage Document AI
+requests==2.32.3          # HTTP 클라이언트 for Upstage API
+httpx>=0.25.0             # 비동기 HTTP 클라이언트
+
+# OCR 라이브러리 (백업용)
+pytesseract==0.3.13       # 로컬 OCR (백업)
+Pillow==10.4.0             # 이미지 처리
+pdf2image==1.17.0         # PDF to 이미지 변환
+
+# 데이터 모델 및 검증
+pydantic==2.8.2           # 데이터 모델
+pydantic-settings==2.7.0  # 설정 관리
+
+# CLI 인터페이스 및 터미널 출력
+click==8.1.7              # CLI 프레임워크
+rich==13.9.4              # 예쁜 터미널 출력
+
+# 환경 변수 관리
+python-dotenv==1.0.1
+
+# 유틸리티 라이브러리
+typing-extensions>=4.8.0  # 타입 힌트 확장
+regex>=2023.10.0          # 정규표현식 엔진
+
+# 선택적 성능 향상 (Linux/macOS)
+uvloop>=0.19.0; sys_platform != "win32"
