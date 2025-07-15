@@ -24,7 +24,7 @@ class DocumentType(str, Enum):
     EXPORT_DECLARATION = "export_declaration"    # 수출신고필증  
     BILL_OF_LADING = "bill_of_lading"           # 선하증권
     TAX_INVOICE = "tax_invoice"                  # 세금계산서
-    TRANSFER_CONFIRMATION = "transfer_confirmation"  # 이체확인증
+    REMITTANCE_ADVICE = "remittance_advice"  # 송금증
     MIXED = "mixed"                              # 여러 문서 타입 혼재
     UNKNOWN = "unknown"                          # 알 수 없는 문서 타입
 
@@ -90,20 +90,20 @@ class InvoiceData(BaseModel):
     
     # 기본 정보
     invoice_number: FieldData = Field(description="송품장 번호 (INVOICE)")
-    description: FieldData = Field(description="품목 (DESCRIPTION, 내역, 운임내역)")
+    description: Optional[FieldData] = Field(default=None, description="품목 (DESCRIPTION, 내역, 운임내역)")
     
     # 금액 정보  
-    krw_amount: FieldData = Field(description="품목별 원화 공급가 (KRW)")
-    vat_amount: FieldData = Field(description="품목별 VAT (V.A.T)")
+    krw_amount: Optional[FieldData] = Field(default=None, description="품목별 원화 공급가 (KRW)")
+    vat_amount: Optional[FieldData] = Field(default=None, description="품목별 VAT (V.A.T)")
     
     # 물류 정보
-    bl_number: FieldData = Field(description="B/L 번호 (M. B/L NO., H. B/L NO., B/L NO.)")
-    gross_weight: FieldData = Field(description="총 중량 (WEIGHT, GROSS WEIGHT)")
-    container_number: FieldData = Field(description="컨테이너 번호 (CONTAINER)")
+    bl_number: Optional[FieldData] = Field(default=None, description="B/L 번호 (M. B/L NO., H. B/L NO., B/L NO.)")
+    gross_weight: Optional[FieldData] = Field(default=None, description="총 중량 (WEIGHT, GROSS WEIGHT)")
+    container_number: Optional[FieldData] = Field(default=None, description="컨테이너 번호 (CONTAINER)")
     
     # 출발지/목적지
-    port_of_loading: FieldData = Field(description="출발지 (P.O.L)")
-    port_of_discharge: FieldData = Field(description="도착지 (P.O.D)")
+    port_of_loading: Optional[FieldData] = Field(default=None, description="출발지 (P.O.L)")
+    port_of_discharge: Optional[FieldData] = Field(default=None, description="도착지 (P.O.D)")
 
 
 class ExportDeclarationData(BaseModel):
@@ -114,12 +114,12 @@ class ExportDeclarationData(BaseModel):
     )
     
     declaration_number: FieldData = Field(description="신고번호")
-    invoice_symbol: FieldData = Field(description="송품장 부호") 
-    gross_weight: FieldData = Field(description="총 중량")
-    container_number: FieldData = Field(description="컨테이너 번호")
-    loading_port: FieldData = Field(description="적재항")
-    destination_country: FieldData = Field(description="목적국")
-    hs_code: FieldData = Field(description="세번부호")
+    invoice_symbol: Optional[FieldData] = Field(default=None, description="송품장 부호") 
+    gross_weight: Optional[FieldData] = Field(default=None, description="총 중량")
+    container_number: Optional[FieldData] = Field(default=None, description="컨테이너 번호")
+    loading_port: Optional[FieldData] = Field(default=None, description="적재항")
+    destination_country: Optional[FieldData] = Field(default=None, description="목적국")
+    hs_code: Optional[FieldData] = Field(default=None, description="세번부호")
 
 
 class BillOfLadingData(BaseModel):
@@ -130,12 +130,12 @@ class BillOfLadingData(BaseModel):
     )
     
     bl_number: FieldData = Field(description="B/L 번호")
-    port_of_loading: FieldData = Field(description="PORT OF LOADING")
-    port_of_discharge: FieldData = Field(description="PORT OF DISCHARGE") 
-    gross_weight: FieldData = Field(description="GROSS WEIGHT")
-    container_number: FieldData = Field(description="컨테이너 번호")
-    vessel_name: FieldData = Field(description="선박명")
-    voyage_number: FieldData = Field(description="항차")
+    port_of_loading: Optional[FieldData] = Field(default=None, description="PORT OF LOADING")
+    port_of_discharge: Optional[FieldData] = Field(default=None, description="PORT OF DISCHARGE") 
+    gross_weight: Optional[FieldData] = Field(default=None, description="GROSS WEIGHT")
+    container_number: Optional[FieldData] = Field(default=None, description="컨테이너 번호")
+    vessel_name: Optional[FieldData] = Field(default=None, description="선박명")
+    voyage_number: Optional[FieldData] = Field(default=None, description="항차")
 
 
 class TaxInvoiceData(BaseModel):
@@ -146,12 +146,12 @@ class TaxInvoiceData(BaseModel):
     )
     
     tax_invoice_number: FieldData = Field(description="세금계산서번호")
-    supply_amount: FieldData = Field(description="공급가액")
-    tax_amount: FieldData = Field(description="세액")
-    total_amount: FieldData = Field(description="합계금액")
-    issue_date: FieldData = Field(description="발급일자")
-    supplier_name: FieldData = Field(description="공급자상호")
-    buyer_name: FieldData = Field(description="공급받는자상호")
+    supply_amount: Optional[FieldData] = Field(default=None, description="공급가액")
+    tax_amount: Optional[FieldData] = Field(default=None, description="세액")
+    total_amount: Optional[FieldData] = Field(default=None, description="합계금액")
+    issue_date: Optional[FieldData] = Field(default=None, description="발급일자")
+    supplier_name: Optional[FieldData] = Field(default=None, description="공급자상호")
+    buyer_name: Optional[FieldData] = Field(default=None, description="공급받는자상호")
 
 
 class TransferConfirmationData(BaseModel):
@@ -162,12 +162,12 @@ class TransferConfirmationData(BaseModel):
     )
     
     supplier_name: FieldData = Field(description="공급자상호")
-    buyer_name: FieldData = Field(description="발급일자")
-    transfer_date: FieldData = Field(description="송금일자")
-    approval_number: FieldData = Field(description="승인번호")
-    transfer_amount: FieldData = Field(description="송금금액")
-    bank_name: FieldData = Field(description="은행명")
-    account_number: FieldData = Field(description="계좌번호")
+    buyer_name: Optional[FieldData] = Field(default=None, description="발급일자")
+    transfer_date: Optional[FieldData] = Field(default=None, description="송금일자")
+    approval_number: Optional[FieldData] = Field(default=None, description="승인번호")
+    transfer_amount: Optional[FieldData] = Field(default=None, description="송금금액")
+    bank_name: Optional[FieldData] = Field(default=None, description="은행명")
+    account_number: Optional[FieldData] = Field(default=None, description="계좌번호")
 
 
 class DocumentDetection(BaseModel):
@@ -399,7 +399,7 @@ DOCUMENT_DATA_MODELS = {
     DocumentType.EXPORT_DECLARATION: ExportDeclarationData,
     DocumentType.BILL_OF_LADING: BillOfLadingData,
     DocumentType.TAX_INVOICE: TaxInvoiceData,
-    DocumentType.TRANSFER_CONFIRMATION: TransferConfirmationData,
+    DocumentType.REMITTANCE_ADVICE: TransferConfirmationData,
 }
 
 

@@ -37,6 +37,7 @@ from app.models import (
 )
 from app.utils import console, save_json_result
 from app.data_extractor import DataExtractor
+from app.db_mapper import convert_backend_to_db, save_to_supabase
 
 # 지원하는 문서 타입
 SUPPORTED_TYPES = {
@@ -93,13 +94,19 @@ SUPPORTED_ENGINES = {
     is_flag=True,
     help='상세한 로그 출력'
 )
+@click.option(
+    '--save-to-db',
+    is_flag=True,
+    help='결과를 Supabase DB에 저장'
+)
 def main(
     files: tuple[str, ...], 
     engine: str,
     output_dir: str | None,
     parallel: bool,
     max_workers: int,
-    verbose: bool
+    verbose: bool,
+    save_to_db: bool
 ):
     """
     PDF 문서에서 무역 관련 데이터를 추출하는 CLI 도구
@@ -133,7 +140,7 @@ def main(
     try:
         # 비동기 처리 실행
         asyncio.run(process_files(
-            files, engine, output_dir, parallel, max_workers, verbose
+            files, engine, output_dir, parallel, max_workers, verbose, save_to_db
         ))
         
     except Exception as e:
@@ -150,7 +157,8 @@ async def process_files(
     output_dir: str,
     parallel: bool,
     max_workers: int,
-    verbose: bool
+    verbose: bool,
+    save_to_db: bool
 ):
     """파일 처리 메인 로직"""
     
@@ -184,7 +192,7 @@ async def process_files(
         )
     
     # 결과 저장 및 출력
-    await save_and_display_results(results, output_dir, verbose)
+    await save_and_display_results(results, output_dir, verbose, save_to_db)
 
 
 async def process_files_parallel(
@@ -350,7 +358,8 @@ async def process_single_pdf(
 async def save_and_display_results(
     results: list[PDFProcessingResult],
     output_dir: str,
-    verbose: bool
+    verbose: bool,
+    save_to_db: bool = False
 ):
     """결과 저장 및 화면 출력"""
     
@@ -377,11 +386,38 @@ async def save_and_display_results(
             if verbose:
                 console.print(f"[red]JSON 저장 실패 ({result.file_name}): {e}[/red]")
     
+    # DB 저장 (옵션이 활성화된 경우)
+    db_saved_count = 0
+    if save_to_db and successful_results:
+        console.print()
+        console.print("[bold blue]Supabase DB에 결과 저장 중...[/bold blue]")
+        
+        for result in successful_results:
+            try:
+                # Backend output을 DB input 형태로 변환
+                db_mappings = convert_backend_to_db(result)
+                
+                if db_mappings:
+                    # DB에 저장
+                    success = save_to_supabase(db_mappings)
+                    if success:
+                        db_saved_count += 1
+                        console.print(f"✅ {result.file_name} DB 저장 완료")
+                    else:
+                        console.print(f"❌ {result.file_name} DB 저장 실패")
+                else:
+                    console.print(f"⚠️ {result.file_name} 매핑 데이터 없음")
+                    
+            except Exception as e:
+                console.print(f"❌ {result.file_name} DB 저장 중 오류: {str(e)}")
+                if verbose:
+                    console.print(f"[red]상세 오류: {e}[/red]")
+    
     # 결과 테이블 출력
     display_results_table(results)
     
     # 요약 통계
-    display_final_summary(results, saved_files)
+    display_final_summary(results, saved_files, db_saved_count, save_to_db)
 
 
 def display_results_table(results: list[PDFProcessingResult]):
@@ -438,7 +474,7 @@ def display_results_table(results: list[PDFProcessingResult]):
     console.print(table)
 
 
-def display_final_summary(results: list[PDFProcessingResult], saved_files: list[str]):
+def display_final_summary(results: list[PDFProcessingResult], saved_files: list[str], db_saved_count: int = 0, save_to_db: bool = False):
     """최종 요약 정보 표시"""
     
     total_files = len(results)
@@ -462,13 +498,18 @@ def display_final_summary(results: list[PDFProcessingResult], saved_files: list[
     # 총 문서 수
     total_documents = sum(len(r.detected_documents) for r in results)
     
+    # DB 저장 정보 추가
+    db_info = ""
+    if save_to_db:
+        db_info = f"\n[bold]DB 저장: {db_saved_count}/{successful_files}개 성공[/bold]"
+    
     console.print()
     console.print(Panel(
         f"[bold {rate_color}]전체 성공률: {success_rate:.1%}[/bold {rate_color}]\n"
         f"[bold]성공: {successful_files}개 | 실패: {failed_files}개[/bold]\n"
         f"[bold]총 추출 문서: {total_documents}개[/bold]\n"
         f"[bold]총 처리시간: {total_time:.2f}초[/bold]\n"
-        f"[bold]평균 처리시간: {avg_time:.2f}초/파일[/bold]\n"
+        f"[bold]평균 처리시간: {avg_time:.2f}초/파일[/bold]{db_info}\n"
         f"[bold]완료 시간:[/bold] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         title="처리 완료",
         border_style=rate_color

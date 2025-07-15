@@ -35,6 +35,7 @@ from .models import (
     DocumentDetection
 )
 from .utils import validate_pdf_file, get_file_info, clean_text
+from .enhanced_detector import EnhancedDocumentDetector
 
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
@@ -425,31 +426,31 @@ class DocumentTypeDetector:
     def __init__(self, verbose: bool = False):
         self.verbose = verbose
         
-        # 문서 타입별 핵심 키워드
+        # 문서 타입별 핵심 키워드 (확장됨)
         self.type_keywords = {
             DocumentType.TAX_INVOICE: {
-                "primary": ["세금계산서", "tax invoice", "공급가액", "세액", "부가가치세"],
-                "secondary": ["사업자등록번호", "합계금액", "공급자", "공급받는자", "발행일자"],
-                "negative": []  # 이 키워드가 있으면 해당 타입이 아님
+                "primary": ["세금계산서", "tax invoice", "공급가액", "세액", "부가가치세", "매출세금계산서", "정발행"],
+                "secondary": ["사업자등록번호", "합계금액", "공급자", "공급받는자", "발행일자", "승인번호", "일련번호"],
+                "negative": []
             },
             DocumentType.INVOICE: {
-                "primary": ["invoice", "commercial invoice", "proforma invoice"],
-                "secondary": ["description", "quantity", "unit price", "amount", "total"],
+                "primary": ["invoice", "commercial invoice", "proforma invoice", "인보이스", "상업송장", "운임", "freight"],
+                "secondary": ["description", "quantity", "unit price", "amount", "total", "화물운송료", "운송비", "내역"],
                 "negative": ["세금계산서", "tax invoice"]
             },
             DocumentType.BILL_OF_LADING: {
-                "primary": ["bill of lading", "b/l", "bl"],
-                "secondary": ["port of loading", "port of discharge", "vessel", "voyage", "shipper", "consignee"],
+                "primary": ["bill of lading", "b/l", "bl", "선하증권", "house b/l", "master b/l"],
+                "secondary": ["port of loading", "port of discharge", "vessel", "voyage", "shipper", "consignee", "p.o.l", "p.o.d", "선박명"],
                 "negative": []
             },
             DocumentType.EXPORT_DECLARATION: {
-                "primary": ["수출신고", "export declaration", "신고번호"],
-                "secondary": ["세번", "hs code", "목적국", "적재항", "송품장"],
+                "primary": ["수출신고", "export declaration", "신고번호", "수출신고필증", "관세청"],
+                "secondary": ["세번", "hs code", "목적국", "적재항", "송품장", "수출신고서", "통관"],
                 "negative": []
             },
-            DocumentType.TRANSFER_CONFIRMATION: {
-                "primary": ["이체확인", "transfer confirmation", "송금확인"],
-                "secondary": ["승인번호", "계좌번호", "송금금액", "approval", "account"],
+            DocumentType.REMITTANCE_ADVICE: {
+                "primary": ["이체확인", "transfer confirmation", "송금확인", "송금증", "입금확인", "결제확인"],
+                "secondary": ["승인번호", "계좌번호", "송금금액", "approval", "account", "은행명", "입금액"],
                 "negative": []
             }
         }
@@ -523,7 +524,7 @@ class DocumentTypeDetector:
     
     def detect_multiple_documents(self, text: str) -> List[Tuple[DocumentType, float, Tuple[int, int]]]:
         """
-        텍스트에서 복수 문서 타입 감지 및 개별 문서 분리
+        텍스트에서 복수 문서 타입 감지 및 개별 문서 분리 (개선된 버전)
         
         Args:
             text: 추출된 텍스트 (페이지 구분자 포함)
@@ -532,41 +533,62 @@ class DocumentTypeDetector:
             List[(문서_타입, 신뢰도, 페이지_범위)]
         """
         
-        # 페이지별로 텍스트 분리
+        # 방법 1: 전체 텍스트에서 모든 문서 타입 동시 검색
+        detected_docs = self._detect_all_document_types_in_text(text)
+        
+        if detected_docs:
+            if self.verbose:
+                logger.info(f"🎯 전체 텍스트 검색으로 감지된 문서: {len(detected_docs)}개")
+                for i, (dtype, conf, pages) in enumerate(detected_docs):
+                    logger.info(f"  {i+1}. {dtype.value} (페이지 {pages[0]}-{pages[1]}, 신뢰도: {conf:.2f})")
+            return detected_docs
+        
+        # 방법 2: 페이지별 감지 (기존 방식)
         pages = self._split_text_by_pages(text)
         
-        # 1단계: 페이지별 문서 타입 감지
-        page_doc_types = []
+        # 각 페이지별로 모든 문서 타입 점수 계산
+        page_scores = []
         for page_num, page_text in enumerate(pages, 1):
-            doc_type, confidence = self.detect_document_type(page_text)
-            page_doc_types.append((page_num, doc_type, confidence, page_text))
+            page_score = self._calculate_all_document_scores(page_text)
+            page_scores.append((page_num, page_score, page_text))
+            
+            if self.verbose:
+                logger.info(f"📄 페이지 {page_num} 점수:")
+                for doc_type, score in page_score.items():
+                    if score > 0:
+                        logger.info(f"  - {doc_type.value}: {score}점")
         
-        # 2단계: 동일한 문서 타입 내에서 개별 문서 분리
+        # 페이지별 최고 점수 문서 타입 선택 (개선된 로직)
         detected_docs = []
-        current_group = []
+        for page_num, scores, page_text in page_scores:
+            # 최소 임계값을 넘는 모든 문서 타입 찾기
+            valid_docs = [(doc_type, score) for doc_type, score in scores.items() if score >= 2]
+            
+            if valid_docs:
+                # 점수 순으로 정렬하고 상위 문서들 선택
+                valid_docs.sort(key=lambda x: x[1], reverse=True)
+                
+                # 최고 점수의 50% 이상인 문서들만 선택 (여러 문서 동시 인정)
+                max_score = valid_docs[0][1]
+                threshold = max_score * 0.5
+                
+                for doc_type, score in valid_docs:
+                    if score >= threshold:
+                        confidence = min(0.9, score / 10)
+                        detected_docs.append((doc_type, confidence, (page_num, page_num)))
+                        
+                        if self.verbose:
+                            logger.info(f"✅ 페이지 {page_num}: {doc_type.value} (점수: {score}, 신뢰도: {confidence:.2f})")
         
-        for page_num, doc_type, confidence, page_text in page_doc_types:
-            if not current_group or current_group[-1][1] == doc_type:
-                # 같은 문서 타입이면 그룹에 추가
-                current_group.append((page_num, doc_type, confidence, page_text))
-            else:
-                # 다른 문서 타입이면 이전 그룹 처리 후 새 그룹 시작
-                if current_group:
-                    individual_docs = self._split_individual_documents(current_group)
-                    detected_docs.extend(individual_docs)
-                current_group = [(page_num, doc_type, confidence, page_text)]
-        
-        # 마지막 그룹 처리
-        if current_group:
-            individual_docs = self._split_individual_documents(current_group)
-            detected_docs.extend(individual_docs)
+        # 동일한 문서 타입 연속 페이지 병합
+        merged_docs = self._merge_consecutive_same_documents(detected_docs)
         
         if self.verbose:
-            logger.info(f"🎯 감지된 개별 문서: {len(detected_docs)}개")
-            for i, (dtype, conf, pages) in enumerate(detected_docs):
+            logger.info(f"🎯 최종 감지된 문서: {len(merged_docs)}개")
+            for i, (dtype, conf, pages) in enumerate(merged_docs):
                 logger.info(f"  {i+1}. {dtype.value} (페이지 {pages[0]}-{pages[1]}, 신뢰도: {conf:.2f})")
         
-        return detected_docs
+        return merged_docs
     
     def _split_individual_documents(self, doc_group: List[Tuple[int, DocumentType, float, str]]) -> List[Tuple[DocumentType, float, Tuple[int, int]]]:
         """
@@ -836,6 +858,7 @@ class PDFProcessor:
     def __init__(self, upstage_api_key: str = None, verbose: bool = False):
         self.parser = PDFParsingEngine(upstage_api_key, verbose)
         self.detector = DocumentTypeDetector(verbose)
+        self.enhanced_detector = EnhancedDocumentDetector(verbose)  # 새로운 감지기 추가
         self.verbose = verbose
     
     async def process_pdf(
@@ -887,33 +910,62 @@ class PDFProcessor:
             result.extraction_engines_used.append(used_engine)
             result.primary_engine = used_engine
             
-            # 2. 복수 문서 타입 감지
-            multiple_docs = self.detector.detect_multiple_documents(extracted_text)
+            # 2. 향상된 복수 문서 타입 감지 (PyMuPDF 스타일)
+            multiple_docs = self.enhanced_detector.detect_documents_in_pages(extracted_text)
             
-            # 3. 문서 감지 결과 생성
+            if self.verbose:
+                logger.info(f"🔍 향상된 감지기로 발견된 문서 수: {len(multiple_docs)}")
+                
+                # 디버깅 정보 출력
+                debug_info = self.enhanced_detector.get_debug_info(extracted_text)
+                logger.info(f"📊 디버깅 정보: {debug_info}")
+            
+            # 3. 문서 감지 결과 생성 및 데이터 추출
             detections = []
             for doc_type, confidence, page_range in multiple_docs:
                 # 해당 페이지 범위의 텍스트 추출
                 page_text = self._extract_text_for_page_range(extracted_text, page_range)
                 
+                # 실제 구조화된 데이터 추출 (DataExtractor 사용)
+                from .data_extractor import DataExtractor
+                extractor = DataExtractor(verbose=self.verbose)
+                structured_data = extractor.extract_data(page_text, doc_type, used_engine)
+                
+                # raw_text와 구조화된 데이터 모두 포함
+                extracted_data = {"raw_text": page_text}
+                extracted_data.update(structured_data)
+                
                 detection = DocumentDetection(
                     document_type=doc_type,
                     confidence=confidence,
                     page_range=page_range,
-                    key_indicators=self._get_key_indicators(page_text, doc_type),
-                    extracted_data={"raw_text": page_text}
+                    key_indicators=self._get_simple_indicators(page_text, doc_type),
+                    extracted_data=extracted_data
                 )
                 detections.append(detection)
             
-            # 감지된 문서가 없으면 단일 문서로 처리
+            # 감지된 문서가 없으면 기존 방식으로 폴백
             if not detections:
+                if self.verbose:
+                    logger.info("🔄 향상된 감지 실패, 기존 방식으로 폴백")
+                
+                # 기존 감지기 사용
                 doc_type, confidence = self.detector.detect_document_type(extracted_text)
+                
+                # 폴백에서도 구조화된 데이터 추출
+                from .data_extractor import DataExtractor
+                extractor = DataExtractor(verbose=self.verbose)
+                structured_data = extractor.extract_data(extracted_text, doc_type, used_engine)
+                
+                extracted_data = {"raw_text": extracted_text}
+                extracted_data.update(structured_data)
+                
                 detection = DocumentDetection(
                     document_type=doc_type,
                     confidence=confidence,
                     page_range=(1, result.total_pages or 1),
-                    key_indicators=self._get_key_indicators(extracted_text, doc_type),
-                    extracted_data={"raw_text": extracted_text}
+                    key_indicators=self._get_simple_indicators(extracted_text, doc_type),
+                    extracted_data=extracted_data
                 )
                 detections = [detection]
             
@@ -966,6 +1018,29 @@ class PDFProcessor:
         
         return indicators[:5]  # 최대 5개 반환
     
+    def _get_simple_indicators(self, text: str, doc_type: DocumentType) -> List[str]:
+        """간단한 키워드 추출"""
+        
+        text_lower = text.lower()
+        indicators = []
+        
+        # 각 문서 타입별 대표 키워드
+        keywords_map = {
+            DocumentType.INVOICE: ['invoice', 'freight', '운임', '인보이스'],
+            DocumentType.TAX_INVOICE: ['세금계산서', '공급가액', '부가가치세'],
+            DocumentType.BILL_OF_LADING: ['bill of lading', 'b/l', '선하증권', 'port of'],
+            DocumentType.EXPORT_DECLARATION: ['수출신고', '신고번호', '관세청'],
+            DocumentType.REMITTANCE_ADVICE: ['이체확인', '송금', '승인번호']
+        }
+        
+        for keyword in keywords_map.get(doc_type, []):
+            if keyword.lower() in text_lower:
+                indicators.append(keyword)
+                if len(indicators) >= 3:
+                    break
+        
+        return indicators
+    
     def get_performance_summary(self) -> Dict[str, Any]:
         """성능 요약 정보 반환"""
         
@@ -976,3 +1051,119 @@ class PDFProcessor:
             "supported_document_types": [dt.value for dt in DocumentType],
             "available_engines": [engine.value for engine in ExtractionEngine]
         }
+    
+    def _enhanced_document_detection(self, text: str, total_pages: int) -> List[DocumentDetection]:
+        """향상된 문서 감지 로직 - 전체 텍스트에서 모든 문서 타입 검색"""
+        
+        detections = []
+        text_lower = text.lower()
+        
+        # 각 문서 타입별로 강력한 키워드 패턴 검색
+        document_patterns = {
+            DocumentType.INVOICE: [
+                r'invoice\s*(?:no\.?|number)?.*?([A-Z0-9\-]+)',
+                r'상업송장|commercial\s*invoice',
+                r'freight\s*(?:charge|cost)',
+                r'인보이스',
+                r'운임',
+                r'화물운송료'
+            ],
+            DocumentType.TAX_INVOICE: [
+                r'세금계산서',
+                r'공급가액.*?[\d,]+',
+                r'세\s*액.*?[\d,]+',
+                r'사업자등록번호.*?\d{3}-\d{2}-\d{5}',
+                r'매출세금계산서'
+            ],
+            DocumentType.BILL_OF_LADING: [
+                r'bill\s*of\s*lading',
+                r'b/l\s*(?:no\.?|number)',
+                r'port\s*of\s*loading',
+                r'port\s*of\s*discharge',
+                r'vessel\s*name',
+                r'선하증권',
+                r'p\.o\.l',
+                r'p\.o\.d'
+            ],
+            DocumentType.EXPORT_DECLARATION: [
+                r'수출신고필증',
+                r'export\s*declaration',
+                r'신고번호.*?\d+',
+                r'관세청',
+                r'h\.?s\.?\s*code.*?\d+',
+                r'수출신고서'
+            ],
+            DocumentType.REMITTANCE_ADVICE: [
+                r'이체확인증',
+                r'송금확인',
+                r'transfer\s*confirmation',
+                r'승인번호.*?\d+',
+                r'계좌번호.*?\d+',
+                r'입금확인',
+                r'송금증'
+            ]
+        }
+        
+        # 각 문서 타입별 점수 계산
+        for doc_type, patterns in document_patterns.items():
+            score = 0
+            found_indicators = []
+            
+            for pattern in patterns:
+                import re
+                matches = re.findall(pattern, text_lower, re.IGNORECASE | re.MULTILINE)
+                if matches:
+                    score += len(matches) * 2  # 패턴 매칭은 높은 점수
+                    found_indicators.extend([pattern.replace(r'.*?\d+', '').replace(r'\s*', ' ') for _ in matches[:3]])
+            
+            # 기본 키워드도 체크
+            basic_keywords = self.detector.type_keywords.get(doc_type, {}).get("primary", [])
+            for keyword in basic_keywords:
+                if keyword.lower() in text_lower:
+                    score += 1
+                    found_indicators.append(keyword)
+            
+            # 충분한 점수가 있으면 문서로 인정
+            if score >= 2:  # 최소 2점 이상 (더 관대하게)
+                confidence = min(0.8, score / 8)  # 최대 0.8 신뢰도
+                
+                # 페이지 범위 추정 (실제로는 더 정교한 로직 필요)
+                estimated_pages = self._estimate_document_pages(text, doc_type, total_pages)
+                
+                detection = DocumentDetection(
+                    document_type=doc_type,
+                    confidence=confidence,
+                    page_range=estimated_pages,
+                    key_indicators=list(set(found_indicators[:5])),  # 중복 제거
+                    extracted_data={"raw_text": text}
+                )
+                detections.append(detection)
+                
+                if self.verbose:
+                    logger.info(f"✅ 향상된 감지: {doc_type.value} (점수: {score}, 신뢰도: {confidence:.2f})")
+        
+        # 신뢰도 순으로 정렬
+        detections.sort(key=lambda x: x.confidence, reverse=True)
+        
+        return detections
+    
+    def _estimate_document_pages(self, text: str, doc_type: DocumentType, total_pages: int) -> Tuple[int, int]:
+        """문서 타입에 따른 페이지 범위 추정"""
+        
+        # 간단한 추정 로직 (실제로는 더 정교하게 구현 가능)
+        if total_pages <= 1:
+            return (1, 1)
+        elif total_pages <= 3:
+            return (1, total_pages)
+        else:
+            # 문서 타입별로 일반적인 페이지 범위 추정
+            if doc_type == DocumentType.INVOICE:
+                return (1, min(2, total_pages))
+            elif doc_type == DocumentType.TAX_INVOICE:
+                return (1, 1)
+            elif doc_type == DocumentType.BILL_OF_LADING:
+                return (1, min(3, total_pages))
+            elif doc_type == DocumentType.EXPORT_DECLARATION:
+                return (1, min(2, total_pages))
+            else:
+                return (1, 1)
