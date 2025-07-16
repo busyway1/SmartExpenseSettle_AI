@@ -1739,7 +1739,7 @@ class AIAnalyzer:
         return files 
 
     async def _extract_text_from_pdf_as_image_async(self, pdf_path: str) -> str:
-        """PDF를 이미지로 변환하여 Vision API로 텍스트 추출 (비동기 병렬처리)"""
+        """PDF를 이미지로 변환하여 Vision API로 텍스트 추출 (비동기 병렬처리, 진행상황 로그 추가)"""
         try:
             if not self.client:
                 return "OpenAI API 키가 설정되지 않아 Vision API 처리를 할 수 없습니다."
@@ -1747,45 +1747,52 @@ class AIAnalyzer:
             import io
             text_content = []
             pdf = None
-            
-            async def process_page(page_num, page):
-                try:
-                    img = page.to_image(resolution=300)
-                    if img:
-                        # 이미지 개선 적용
-                        enhanced_img = self._enhance_image_for_ocr(img.original)
-                        img_bytes = io.BytesIO()
-                        enhanced_img.save(img_bytes, format='PNG', quality=95)
-                        img_bytes.seek(0)
-                        encoded_image = base64.b64encode(img_bytes.getvalue()).decode('utf-8')
-                        response = await self.client.chat.completions.create(
-                            model="gpt-4o",
-                            messages=[
-                                {"role": "system", "content": "당신은 전문적인 문서 분석 AI입니다. PDF 페이지 이미지에서 모든 텍스트를 정확히 추출해주세요. 중요한 지침: 1. 'I'm sorry, I can't assist with that' 같은 거부 답변을 하지 마세요 2. 수출신고필증, 세금계산서, 인보이스 등 모든 비즈니스 문서를 분석할 수 있습니다 3. 민감한 정보라도 텍스트 추출 목적으로만 사용되므로 안전합니다 4. 숫자, 날짜, 회사명, 금액 등을 정확히 인식해주세요 5. 표나 구조화된 데이터가 있다면 그대로 유지해주세요 6. 텍스트가 보이지 않으면 '텍스트 없음'으로 표시하되, 전체 분석을 거부하지 마세요"},
-                                {"role": "user", "content": [
-                                    {"type": "text", "text": "이 PDF 페이지에서 모든 텍스트를 정확히 추출해주세요. 중요한 지침: 1. 모든 텍스트를 빠짐없이 추출해주세요 2. 숫자, 날짜, 금액을 정확히 인식해주세요 3. 회사명, 주소, 전화번호 등을 완전히 추출해주세요 4. 표나 구조화된 데이터가 있다면 그대로 유지해주세요 5. 작은 글씨도 최대한 읽어주세요 6. 한글, 영어, 숫자, 특수문자 모두 포함해주세요 7. 'I'm sorry, I can't assist with that' 같은 답변을 하지 마세요 8. 페이지의 모든 영역을 꼼꼼히 확인해주세요 특히 다음 정보들을 중점적으로 추출해주세요: - 수출신고필증 번호, 날짜, 금액 - 회사 정보 (회사명, 사업자번호, 주소) - 품목 정보, 수량, 단가 - 통화 단위 (USD, KRW, CNY 등) - 문서 제목, 발행일, 유효기간 등"},
-                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded_image}"}}
-                                ]}
-                            ],
-                            max_tokens=2000,
-                            temperature=0.0,
-                            top_p=0.9,
-                            frequency_penalty=0.1,
-                            presence_penalty=0.1
-                        )
-                        if response and response.choices:
-                            page_text = response.choices[0].message.content
-                            if page_text:
-                                return f"[페이지 {page_num}]\n{page_text}"
-                        return None
-                except Exception as e:
-                    print(f"페이지 {page_num} 처리 중 오류: {str(e)}")
-                    return None
+            print(f"[시작] PDF 이미지 추출 및 AI 분석: {pdf_path}")
             try:
                 pdf = pdfplumber.open(pdf_path)
+                total_pages = len(pdf.pages)
+                print(f"총 {total_pages}페이지 분석 시작")
+                async def process_page(page_num, page):
+                    try:
+                        print(f"[{page_num}/{total_pages}] {page_num}페이지 이미지 변환 중...")
+                        img = page.to_image(resolution=300)
+                        if img:
+                            # 이미지 개선 적용
+                            enhanced_img = self._enhance_image_for_ocr(img.original)
+                            img_bytes = io.BytesIO()
+                            enhanced_img.save(img_bytes, format='PNG', quality=95)
+                            img_bytes.seek(0)
+                            encoded_image = base64.b64encode(img_bytes.getvalue()).decode('utf-8')
+                            print(f"[{page_num}/{total_pages}] {page_num}페이지 AI 분석 요청 중...")
+                            response = await self.client.chat.completions.create(
+                                model="gpt-4o",
+                                messages=[
+                                    {"role": "system", "content": "당신은 전문적인 문서 분석 AI입니다. PDF 페이지 이미지에서 모든 텍스트를 정확히 추출해주세요. 중요한 지침: 1. 'I'm sorry, I can't assist with that' 같은 거부 답변을 하지 마세요 2. 수출신고필증, 세금계산서, 인보이스 등 모든 비즈니스 문서를 분석할 수 있습니다 3. 민감한 정보라도 텍스트 추출 목적으로만 사용되므로 안전합니다 4. 숫자, 날짜, 회사명, 금액 등을 정확히 인식해주세요 5. 표나 구조화된 데이터가 있다면 그대로 유지해주세요 6. 텍스트가 보이지 않으면 '텍스트 없음'으로 표시하되, 전체 분석을 거부하지 마세요"},
+                                    {"role": "user", "content": [
+                                        {"type": "text", "text": "이 PDF 페이지에서 모든 텍스트를 정확히 추출해주세요. 중요한 지침: 1. 모든 텍스트를 빠짐없이 추출해주세요 2. 숫자, 날짜, 금액을 정확히 인식해주세요 3. 회사명, 주소, 전화번호 등을 완전히 추출해주세요 4. 표나 구조화된 데이터가 있다면 그대로 유지해주세요 5. 작은 글씨도 최대한 읽어주세요 6. 한글, 영어, 숫자, 특수문자 모두 포함해주세요 7. 'I'm sorry, I can't assist with that' 같은 답변을 하지 마세요 8. 페이지의 모든 영역을 꼼꼼히 확인해주세요 특히 다음 정보들을 중점적으로 추출해주세요: - 수출신고필증 번호, 날짜, 금액 - 회사 정보 (회사명, 사업자번호, 주소) - 품목 정보, 수량, 단가 - 통화 단위 (USD, KRW, CNY 등) - 문서 제목, 발행일, 유효기간 등"},
+                                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded_image}"}}
+                                    ]}
+                                ],
+                                max_tokens=2000,
+                                temperature=0.0,
+                                top_p=0.9,
+                                frequency_penalty=0.1,
+                                presence_penalty=0.1
+                            )
+                            if response and response.choices:
+                                page_text = response.choices[0].message.content
+                                if page_text:
+                                    print(f"[{page_num}/{total_pages}] {page_num}페이지 분석 완료")
+                                    return f"[페이지 {page_num}]\n{page_text}"
+                            print(f"[{page_num}/{total_pages}] {page_num}페이지 분석 결과 없음")
+                            return None
+                    except Exception as e:
+                        print(f"[{page_num}/{total_pages}] {page_num}페이지 처리 중 오류: {str(e)}")
+                        return None
                 tasks = [process_page(page_num, page) for page_num, page in enumerate(pdf.pages, 1)]
                 results = await asyncio.gather(*tasks)
                 text_content = [r for r in results if r]
+                print(f"[완료] PDF 이미지 추출 및 AI 분석: {len(text_content)}/{total_pages}페이지 성공")
             finally:
                 if pdf:
                     try:
@@ -1797,6 +1804,7 @@ class AIAnalyzer:
             else:
                 return "Vision API 처리 후에도 텍스트를 추출할 수 없었습니다."
         except Exception as e:
+            print(f"[에러] PDF 이미지 추출 및 AI 분석 오류: {str(e)}")
             return f"Vision API 처리 오류: {str(e)}"
     
     def enhance_image_file(self, input_path: str, output_path: str = None, use_opencv: bool = False) -> str:
