@@ -603,9 +603,9 @@ class AIAnalyzer:
                 individual_docs = self._identify_individual_documents(doc_type, pages, text)
                 
                 # 각 개별 문서에 대한 분석 태스크 생성
-                for i, doc_text in enumerate(individual_docs):
-                    if doc_text.strip():
-                        task = self._extract_info_by_document_type_async(doc_type, doc_text, i + 1)
+                for i, doc_info in enumerate(individual_docs):
+                    if doc_info['text'].strip():
+                        task = self._extract_info_by_document_type_async(doc_type, doc_info['text'], i + 1, file_path, doc_info['page_number'])
                         tasks.append((doc_type, task))
             
             # 3단계: 모든 태스크를 병렬로 실행
@@ -662,15 +662,15 @@ class AIAnalyzer:
                 "error": f"문서 유형별 분석 중 오류 발생: {str(e)}"
             }
     
-    async def _extract_info_by_document_type_async(self, doc_type: str, text: str, document_index: int) -> Dict:
+    async def _extract_info_by_document_type_async(self, doc_type: str, text: str, document_index: int, file_path: str = "", page_number: int = None) -> Dict:
         """문서 유형별 정보 추출 (비동기식)"""
         try:
-            print(f"정보 추출 시작: {doc_type} #{document_index}")
+            print(f"정보 추출 시작: {doc_type} #{document_index}, 페이지: {page_number}")
             print(f"입력 텍스트 길이: {len(text)}")
             print(f"입력 텍스트 미리보기: {text[:200]}...")
             
-            # 문서 유형별 전용 프롬프트 생성
-            prompt = self._create_document_type_prompt(doc_type, text)
+            # 문서 유형별 전용 프롬프트 생성 (페이지 번호 포함)
+            prompt = self._create_document_type_prompt(doc_type, text, file_path, page_number)
             
             print(f"프롬프트 길이: {len(prompt)}")
             print(f"프롬프트 미리보기: {prompt[:300]}...")
@@ -1108,10 +1108,10 @@ class AIAnalyzer:
                 individual_docs = self._identify_individual_documents(doc_type, pages, text)
                 
                 doc_results = []
-                for i, doc_text in enumerate(individual_docs):
+                for i, doc_info in enumerate(individual_docs):
                     print(f"  {doc_type} #{i+1} 분석 중...")
-                    if doc_text.strip():
-                        type_result = self._extract_info_by_document_type(doc_type, doc_text)
+                    if doc_info['text'].strip():
+                        type_result = self._extract_info_by_document_type(doc_type, doc_info['text'], file_path, doc_info['page_number'])
                         type_result["document_index"] = i + 1  # 문서 순서 표시
                         doc_results.append(type_result)
                 
@@ -1135,8 +1135,8 @@ class AIAnalyzer:
                 "error": f"문서 유형별 분석 중 오류 발생: {str(e)}"
             }
     
-    def _identify_individual_documents(self, doc_type: str, pages: List[int], full_text: str) -> List[str]:
-        """같은 유형의 문서를 개별 문서로 분리"""
+    def _identify_individual_documents(self, doc_type: str, pages: List[int], full_text: str) -> List[Dict]:
+        """같은 유형의 문서를 개별 문서로 분리 (페이지 번호 포함)"""
         try:
             print(f"개별 문서 분리 시작: {doc_type}, 페이지: {pages}")
             print(f"전체 텍스트 길이: {len(full_text)}")
@@ -1169,24 +1169,24 @@ class AIAnalyzer:
             
             print(f"추출된 페이지 텍스트 수: {len(page_texts)}")
             
-            # 문서 유형별 개별 문서 분리 로직
+            # 문서 유형별 개별 문서 분리 로직 (페이지 번호 포함)
             if doc_type == "세금계산서":
-                result = self._split_tax_invoices(page_texts)
+                result = self._split_tax_invoices_with_pages(page_texts)
             elif doc_type == "수출신고필증":
-                result = self._split_export_declarations(page_texts)
+                result = self._split_export_declarations_with_pages(page_texts)
             elif doc_type == "인보이스":
-                result = self._split_invoices(page_texts)
+                result = self._split_invoices_with_pages(page_texts)
             elif doc_type == "BL":
-                result = self._split_bl_documents(page_texts)
+                result = self._split_bl_documents_with_pages(page_texts)
             elif doc_type == "이체확인증":
-                result = self._split_transfer_receipts(page_texts)
+                result = self._split_transfer_receipts_with_pages(page_texts)
             else:
-                # 기본적으로 페이지별로 분리
-                result = [page['text'] for page in page_texts]
+                # 기본적으로 페이지별로 분리 (페이지 번호 포함)
+                result = [{'text': page['text'], 'page_number': page['number']} for page in page_texts]
             
             print(f"최종 개별 문서 수: {len(result)}")
             for i, doc in enumerate(result):
-                print(f"문서 {i+1} 길이: {len(doc)}")
+                print(f"문서 {i+1} 길이: {len(doc['text'])}, 페이지: {doc.get('page_number', 'N/A')}")
             
             return result
                 
@@ -1195,6 +1195,72 @@ class AIAnalyzer:
             # 오류 발생시 전체 텍스트를 하나로 반환
             return [full_text]
     
+    def _split_tax_invoices_with_pages(self, page_texts: List[Dict]) -> List[Dict]:
+        """세금계산서 개별 문서 분리 (페이지 번호 포함)"""
+        individual_docs = []
+        
+        for page in page_texts:
+            text = page['text']
+            page_number = page['number']
+            # 세금계산서의 시작을 나타내는 키워드 확인
+            if any(keyword in text.lower() for keyword in ['세금계산서', '승인번호', '공급가액', '부가세']):
+                individual_docs.append({'text': text, 'page_number': page_number})
+        
+        return individual_docs if individual_docs else [{'text': page['text'], 'page_number': page['number']} for page in page_texts]
+    
+    def _split_export_declarations_with_pages(self, page_texts: List[Dict]) -> List[Dict]:
+        """수출신고필증 개별 문서 분리 (페이지 번호 포함)"""
+        individual_docs = []
+        
+        for page in page_texts:
+            text = page['text']
+            page_number = page['number']
+            # 수출신고필증의 시작을 나타내는 키워드 확인
+            if any(keyword in text.lower() for keyword in ['수출신고필증', '신고번호', '송품장부호', '세번부호']):
+                individual_docs.append({'text': text, 'page_number': page_number})
+        
+        return individual_docs if individual_docs else [{'text': page['text'], 'page_number': page['number']} for page in page_texts]
+    
+    def _split_invoices_with_pages(self, page_texts: List[Dict]) -> List[Dict]:
+        """인보이스 개별 문서 분리 (페이지 번호 포함)"""
+        individual_docs = []
+        
+        for page in page_texts:
+            text = page['text']
+            page_number = page['number']
+            # 인보이스의 시작을 나타내는 키워드 확인
+            if any(keyword in text.lower() for keyword in ['invoice', '인보이스', '송품장', 'bill to', 'ship to']):
+                individual_docs.append({'text': text, 'page_number': page_number})
+        
+        return individual_docs if individual_docs else [{'text': page['text'], 'page_number': page['number']} for page in page_texts]
+    
+    def _split_bl_documents_with_pages(self, page_texts: List[Dict]) -> List[Dict]:
+        """BL 문서 개별 문서 분리 (페이지 번호 포함)"""
+        individual_docs = []
+        
+        for page in page_texts:
+            text = page['text']
+            page_number = page['number']
+            # BL 문서의 시작을 나타내는 키워드 확인
+            if any(keyword in text.lower() for keyword in ['bill of lading', 'b/l', 'way bill', 'shipper', 'consignee']):
+                individual_docs.append({'text': text, 'page_number': page_number})
+        
+        return individual_docs if individual_docs else [{'text': page['text'], 'page_number': page['number']} for page in page_texts]
+    
+    def _split_transfer_receipts_with_pages(self, page_texts: List[Dict]) -> List[Dict]:
+        """이체확인증 개별 문서 분리 (페이지 번호 포함)"""
+        individual_docs = []
+        
+        for page in page_texts:
+            text = page['text']
+            page_number = page['number']
+            # 이체확인증의 시작을 나타내는 키워드 확인
+            if any(keyword in text.lower() for keyword in ['이체확인증', '입출금내역', '송금증', '이체금액', '출금금액', '받는분']):
+                individual_docs.append({'text': text, 'page_number': page_number})
+        
+        return individual_docs if individual_docs else [{'text': page['text'], 'page_number': page['number']} for page in page_texts]
+    
+    # 기존 메서드들도 유지 (하위 호환성)
     def _split_tax_invoices(self, page_texts: List[Dict]) -> List[str]:
         """세금계산서 개별 문서 분리"""
         individual_docs = []
@@ -1314,7 +1380,7 @@ class AIAnalyzer:
                 return "인보이스"
             
             # BL (Bill of Lading, Way Bill, B/L 등)
-            elif any(keyword in page_text_lower for keyword in ['bill of lading', 'b/l', 'way bill', 'shipper', 'consignee', 'bl no', 'bl number', 'port of loading', 'port of discharge', 'gross weight']):
+            elif any(keyword in page_text_lower for keyword in ['bill of lading', 'way bill', 'shipper', 'consignee', 'port of loading', 'port of discharge', 'gross weight']):
                 return "BL"
             
             # Packing List
@@ -1322,7 +1388,7 @@ class AIAnalyzer:
                 return "Packing List"
             
             # 이체확인증/송금증
-            elif any(keyword in page_text_lower for keyword in ['이체확인증', '송금증', '이체금액', '출금금액', '받는분']):
+            elif any(keyword in page_text_lower for keyword in ['이체확인증', '입출금내역', '송금증', '이체금액', '출금금액', '계좌번호', '거래일시']):
                 return "이체확인증"
             
             # 기타 상업서류
@@ -1343,15 +1409,15 @@ class AIAnalyzer:
         """지원되는 문서 유형인지 확인"""
         return PromptManager.is_supported_document_type(doc_type)
     
-    def _extract_info_by_document_type(self, doc_type: str, text: str) -> Dict:
+    def _extract_info_by_document_type(self, doc_type: str, text: str, file_path: str = "", page_number: int = None) -> Dict:
         """문서 유형별 정보 추출"""
         try:
-            print(f"정보 추출 시작: {doc_type}")
+            print(f"정보 추출 시작: {doc_type}, 페이지: {page_number}")
             print(f"입력 텍스트 길이: {len(text)}")
             print(f"입력 텍스트 미리보기: {text[:200]}...")
             
-            # 문서 유형별 전용 프롬프트 생성
-            prompt = self._create_document_type_prompt(doc_type, text)
+            # 문서 유형별 전용 프롬프트 생성 (페이지 번호 포함)
+            prompt = self._create_document_type_prompt(doc_type, text, file_path, page_number)
             
             print(f"프롬프트 길이: {len(prompt)}")
             print(f"프롬프트 미리보기: {prompt[:300]}...")
@@ -1413,9 +1479,10 @@ class AIAnalyzer:
                 "error": f"정보 추출 오류: {str(e)}"
             }
     
-    def _create_document_type_prompt(self, doc_type: str, text: str) -> str:
+    def _create_document_type_prompt(self, doc_type: str, text: str, file_path: str = "", page_number: int = None) -> str:
         """문서 유형별 전용 프롬프트 생성"""
-        return PromptManager.get_prompt(doc_type, text)
+        file_name = os.path.basename(file_path) if file_path else ""
+        return PromptManager.get_prompt(doc_type, text, file_name, page_number)
     
     def _combine_document_type_results(self, results: Dict) -> str:
         """문서 유형별 결과 통합"""

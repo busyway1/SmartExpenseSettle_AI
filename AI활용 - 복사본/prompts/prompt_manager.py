@@ -13,7 +13,7 @@ class PromptManager:
     """문서 유형별 프롬프트 관리자"""
     
     @staticmethod
-    def get_prompt(doc_type: str, text: str) -> str:
+    def get_prompt(doc_type: str, text: str, file_name: str = "", page_number: int = None) -> str:
         """문서 유형에 따른 프롬프트 반환"""
         
         # 문서 유형별 프롬프트 매핑
@@ -27,10 +27,10 @@ class PromptManager:
         
         # 해당 문서 유형의 프롬프트 함수가 있으면 사용
         if doc_type in prompt_mapping:
-            return prompt_mapping[doc_type](text)
+            return prompt_mapping[doc_type](text, file_name, page_number)
         else:
             # 기본 프롬프트 사용
-            return get_general_prompt(text, doc_type)
+            return get_general_prompt(text, doc_type, file_name, page_number)
     
     @staticmethod
     def get_supported_document_types() -> list:
