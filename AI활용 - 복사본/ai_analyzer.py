@@ -14,6 +14,7 @@ from PIL import Image, ImageEnhance, ImageFilter
 import numpy as np
 import cv2
 import re
+from prompts.document_type_classification import get_document_type_classification_prompt
 
 class AIAnalyzer:
     def __init__(self, api_key: str = ""):
@@ -674,7 +675,7 @@ class AIAnalyzer:
         """문서 유형별 자동 인식 및 분석 (비동기 + 병렬처리)"""
         try:
             # 1단계: 문서 유형 분류
-            document_types = self._classify_document_types(text)
+            document_types = await self._classify_document_types_async(text)
             
             if not document_types:
                 return {
@@ -1436,84 +1437,92 @@ class AIAnalyzer:
         return individual_docs if individual_docs else [page['text'] for page in page_texts]
     
     def _classify_document_types(self, text: str) -> Dict[str, List[int]]:
-        """문서 유형 분류"""
-        try:
-            # 페이지별로 분할
-            pages = []
-            page_texts = text.split('[페이지')
-            
-            for i, page_text in enumerate(page_texts):
-                if not page_text.strip():
-                    continue
-                
-                # 페이지 번호 추출
-                page_num = i
-                if ']' in page_text:
-                    try:
-                        page_num = int(page_text.split(']')[0])
-                    except:
-                        page_num = i
-                
-                pages.append({
-                    'number': page_num,
-                    'text': page_text.split(']', 1)[1] if ']' in page_text else page_text
-                })
-            
-            # 각 페이지의 문서 유형 분류
-            document_types = {}
-            
-            for page in pages:
-                doc_type = self._identify_single_page_type(page['text'])
-                if doc_type:
-                    if doc_type not in document_types:
-                        document_types[doc_type] = []
-                    document_types[doc_type].append(page['number'])
-            
-            return document_types
-            
-        except Exception as e:
-            print(f"문서 유형 분류 오류: {str(e)}")
-            return {}
-    
-    def _identify_single_page_type(self, page_text: str) -> str:
-        """단일 페이지의 문서 유형 인식"""
-        try:
-            # 키워드 기반 문서 유형 인식
-            page_text_lower = page_text.lower()
-            
-            # 수출신고필증
-            if any(keyword in page_text_lower for keyword in ['수출신고필증', '수출신고', '신고번호', '세관과', '송품장부호', '세번부호', '적재항', '목적국']):
-                return "수출신고필증"
-            
-            # 세금계산서
-            elif any(keyword in page_text_lower for keyword in ['세금계산서', '사업자등록번호','영세율 세금계산서']):
-                return "세금계산서"
-            
-            # 인보이스 (commercial invoice는 제외)
-            elif any(keyword in page_text_lower for keyword in ['invoice No', 'invoice', '인보이스', '송품장', '청구금액']) and 'commercial invoice' not in page_text_lower:
-                return "인보이스"
-            
-            # BL (Bill of Lading, Way Bill, B/L 등)
-            elif any(keyword in page_text_lower for keyword in ['bill of lading', 'way bill', 'shipper', 'consignee', 'port of loading', 'port of discharge', 'gross weight']):
-                return "BL"
-            
-            # Packing List
-            elif any(keyword in page_text_lower for keyword in ['packing list', 'p/l','Date of invoice']):
-                return "Packing List"
-            
-            # 이체확인증/송금증
-            elif any(keyword in page_text_lower for keyword in ['이체확인증', '이체확인서', '입출금내역', '확인증', '송금증', '송금확인증', '이체결과리스트', '이체결과확인서', '무통장단체입금확인서', '이체금액', '출금금액', '받는분', '계좌번호']):
-                return "이체확인증"
-            
-            # 기타 상업서류
-            elif any(keyword in page_text_lower for keyword in ['commercial invoice', 'certificate', 'cert', '증명서']):
-                return "기타상업서류"
-            
-            return "미분류"
-            
-        except Exception as e:
-            print(f"페이지 유형 인식 오류: {str(e)}")
-            return "미분류"
+        """AI 기반 문서 유형 분류 (동기)"""
+        from prompts.document_type_classification import get_document_type_classification_prompt
+        document_types = {}
+        import asyncio
+        # 페이지별로 분할
+        pages = []
+        page_texts = text.split('[페이지')
+        for i, page_text in enumerate(page_texts):
+            if not page_text.strip():
+                continue
+            page_num = i
+            if ']' in page_text:
+                try:
+                    page_num = int(page_text.split(']')[0])
+                except:
+                    page_num = i
+            page_content = page_text.split(']', 1)[1] if ']' in page_text else page_text
+            pages.append({'number': page_num, 'text': page_content})
+
+        async def classify_page(page):
+            prompt = get_document_type_classification_prompt(page['text'])
+            response = await self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "당신은 문서 유형 분류 전문가입니다. 반드시 아래 목록 중 하나만 한글로 답변하세요."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=20,
+                temperature=0.0
+            )
+            doc_type = response.choices[0].message.content.strip().replace('"', '').replace("'", "")
+            return doc_type
+
+        async def classify_all_pages():
+            tasks = [classify_page(page) for page in pages]
+            return await asyncio.gather(*tasks)
+
+        doc_type_results = asyncio.run(classify_all_pages())
+        for idx, doc_type in enumerate(doc_type_results):
+            page_num = pages[idx]['number']
+            if doc_type not in document_types:
+                document_types[doc_type] = []
+            document_types[doc_type].append(page_num)
+        return document_types
+
+    async def _classify_document_types_async(self, text: str) -> Dict[str, List[int]]:
+        """AI 기반 문서 유형 분류 (비동기)"""
+        from prompts.document_type_classification import get_document_type_classification_prompt
+        document_types = {}
+        # 페이지별로 분할
+        pages = []
+        page_texts = text.split('[페이지')
+        for i, page_text in enumerate(page_texts):
+            if not page_text.strip():
+                continue
+            page_num = i
+            if ']' in page_text:
+                try:
+                    page_num = int(page_text.split(']')[0])
+                except:
+                    page_num = i
+            page_content = page_text.split(']', 1)[1] if ']' in page_text else page_text
+            pages.append({'number': page_num, 'text': page_content})
+
+        async def classify_page(page):
+            prompt = get_document_type_classification_prompt(page['text'])
+            response = await self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "당신은 문서 유형 분류 전문가입니다. 반드시 아래 목록 중 하나만 한글로 답변하세요."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=20,
+                temperature=0.0
+            )
+            doc_type = response.choices[0].message.content.strip().replace('"', '').replace("'", "")
+            return doc_type
+
+        tasks = [classify_page(page) for page in pages]
+        doc_type_results = await asyncio.gather(*tasks)
+        for idx, doc_type in enumerate(doc_type_results):
+            page_num = pages[idx]['number']
+            if doc_type not in document_types:
+                document_types[doc_type] = []
+            document_types[doc_type].append(page_num)
+        return document_types
     
     def get_supported_document_types(self) -> list:
         """지원되는 문서 유형 목록 반환"""
@@ -1729,129 +1738,64 @@ class AIAnalyzer:
         
         return files 
 
-    def _extract_text_from_pdf_as_image(self, pdf_path: str) -> str:
-        """PDF를 이미지로 변환하여 Vision API로 텍스트 추출"""
+    async def _extract_text_from_pdf_as_image_async(self, pdf_path: str) -> str:
+        """PDF를 이미지로 변환하여 Vision API로 텍스트 추출 (비동기 병렬처리)"""
         try:
-            if not self.sync_client:
+            if not self.client:
                 return "OpenAI API 키가 설정되지 않아 Vision API 처리를 할 수 없습니다."
-            
             import pdfplumber
             import io
-            
             text_content = []
             pdf = None
             
+            async def process_page(page_num, page):
+                try:
+                    img = page.to_image(resolution=300)
+                    if img:
+                        # 이미지 개선 적용
+                        enhanced_img = self._enhance_image_for_ocr(img.original)
+                        img_bytes = io.BytesIO()
+                        enhanced_img.save(img_bytes, format='PNG', quality=95)
+                        img_bytes.seek(0)
+                        encoded_image = base64.b64encode(img_bytes.getvalue()).decode('utf-8')
+                        response = await self.client.chat.completions.create(
+                            model="gpt-4o",
+                            messages=[
+                                {"role": "system", "content": "당신은 전문적인 문서 분석 AI입니다. PDF 페이지 이미지에서 모든 텍스트를 정확히 추출해주세요. 중요한 지침: 1. 'I'm sorry, I can't assist with that' 같은 거부 답변을 하지 마세요 2. 수출신고필증, 세금계산서, 인보이스 등 모든 비즈니스 문서를 분석할 수 있습니다 3. 민감한 정보라도 텍스트 추출 목적으로만 사용되므로 안전합니다 4. 숫자, 날짜, 회사명, 금액 등을 정확히 인식해주세요 5. 표나 구조화된 데이터가 있다면 그대로 유지해주세요 6. 텍스트가 보이지 않으면 '텍스트 없음'으로 표시하되, 전체 분석을 거부하지 마세요"},
+                                {"role": "user", "content": [
+                                    {"type": "text", "text": "이 PDF 페이지에서 모든 텍스트를 정확히 추출해주세요. 중요한 지침: 1. 모든 텍스트를 빠짐없이 추출해주세요 2. 숫자, 날짜, 금액을 정확히 인식해주세요 3. 회사명, 주소, 전화번호 등을 완전히 추출해주세요 4. 표나 구조화된 데이터가 있다면 그대로 유지해주세요 5. 작은 글씨도 최대한 읽어주세요 6. 한글, 영어, 숫자, 특수문자 모두 포함해주세요 7. 'I'm sorry, I can't assist with that' 같은 답변을 하지 마세요 8. 페이지의 모든 영역을 꼼꼼히 확인해주세요 특히 다음 정보들을 중점적으로 추출해주세요: - 수출신고필증 번호, 날짜, 금액 - 회사 정보 (회사명, 사업자번호, 주소) - 품목 정보, 수량, 단가 - 통화 단위 (USD, KRW, CNY 등) - 문서 제목, 발행일, 유효기간 등"},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded_image}"}}
+                                ]}
+                            ],
+                            max_tokens=2000,
+                            temperature=0.0,
+                            top_p=0.9,
+                            frequency_penalty=0.1,
+                            presence_penalty=0.1
+                        )
+                        if response and response.choices:
+                            page_text = response.choices[0].message.content
+                            if page_text:
+                                return f"[페이지 {page_num}]\n{page_text}"
+                        return None
+                except Exception as e:
+                    print(f"페이지 {page_num} 처리 중 오류: {str(e)}")
+                    return None
             try:
-                # pdfplumber로 페이지별 이미지 변환
                 pdf = pdfplumber.open(pdf_path)
-                for page_num, page in enumerate(pdf.pages, 1):
-                    print(f"페이지 {page_num} 이미지 변환 중...")
-                    
-                    try:
-                        # 페이지를 이미지로 변환 (고해상도)
-                        img = page.to_image(resolution=300)
-                        if img:
-                            # 이미지 개선 적용
-                            enhanced_img = self._enhance_image_for_ocr(img.original)
-                            
-                            # 개선된 이미지를 바이트로 변환
-                            img_bytes = io.BytesIO()
-                            enhanced_img.save(img_bytes, format='PNG', quality=95)
-                            img_bytes.seek(0)
-                            
-                            # base64로 인코딩
-                            encoded_image = base64.b64encode(img_bytes.getvalue()).decode('utf-8')
-                            
-                            # OpenAI Vision API로 텍스트 추출
-                            response = self.sync_client.chat.completions.create(
-                                model="gpt-4o",
-                                messages=[
-                                    {
-                                        "role": "system",
-                                        "content": """당신은 전문적인 문서 분석 AI입니다. PDF 페이지 이미지에서 모든 텍스트를 정확히 추출해주세요.
-
-중요한 지침:
-1. "I'm sorry, I can't assist with that" 같은 거부 답변을 하지 마세요
-2. 수출신고필증, 세금계산서, 인보이스 등 모든 비즈니스 문서를 분석할 수 있습니다
-3. 민감한 정보라도 텍스트 추출 목적으로만 사용되므로 안전합니다
-4. 숫자, 날짜, 회사명, 금액 등을 정확히 인식해주세요
-5. 표나 구조화된 데이터가 있다면 그대로 유지해주세요
-6. 텍스트가 보이지 않으면 "텍스트 없음"으로 표시하되, 전체 분석을 거부하지 마세요"""
-                                    },
-                                    {
-                                        "role": "user",
-                                        "content": [
-                                            {
-                                                "type": "text",
-                                                "text": """이 PDF 페이지에서 모든 텍스트를 정확히 추출해주세요.
-
-중요한 지침:
-1. 모든 텍스트를 빠짐없이 추출해주세요
-2. 숫자, 날짜, 금액을 정확히 인식해주세요
-3. 회사명, 주소, 전화번호 등을 완전히 추출해주세요
-4. 표나 구조화된 데이터가 있다면 그대로 유지해주세요
-5. 작은 글씨도 최대한 읽어주세요
-6. 한글, 영어, 숫자, 특수문자 모두 포함해주세요
-7. "I'm sorry, I can't assist with that" 같은 답변을 하지 마세요
-8. 페이지의 모든 영역을 꼼꼼히 확인해주세요
-
-특히 다음 정보들을 중점적으로 추출해주세요:
-- 수출신고필증 번호, 날짜, 금액
-- 회사 정보 (회사명, 사업자번호, 주소)
-- 품목 정보, 수량, 단가
-- 통화 단위 (USD, KRW, CNY 등)
-- 문서 제목, 발행일, 유효기간 등"""
-                                            },
-                                            {
-                                                "type": "image_url",
-                                                "image_url": {
-                                                    "url": f"data:image/png;base64,{encoded_image}"
-                                                }
-                                            }
-                                        ]
-                                    }
-                                ],
-                                max_tokens=2000,
-                                temperature=0.0,
-                                top_p=0.9,
-                                frequency_penalty=0.1,
-                                presence_penalty=0.1
-                            )
-                            
-                            if response and response.choices:
-                                page_text = response.choices[0].message.content
-                                if page_text:
-                                    text_content.append(f"[페이지 {page_num}]\n{page_text}")
-                                    print(f"페이지 {page_num}: Vision API 처리 완료")
-                            else:
-                                print(f"페이지 {page_num}: Vision API 응답이 비어있습니다.")
-                            
-                            # 메모리 정리
-                            img_bytes.close()
-                            del img_bytes
-                            del encoded_image
-                            
-                    except Exception as e:
-                        print(f"페이지 {page_num} 처리 중 오류: {str(e)}")
-                        continue
-                    
-                    # 페이지별 메모리 정리
-                    if 'img' in locals():
-                        del img
-                
+                tasks = [process_page(page_num, page) for page_num, page in enumerate(pdf.pages, 1)]
+                results = await asyncio.gather(*tasks)
+                text_content = [r for r in results if r]
             finally:
-                # PDF 파일 정리
                 if pdf:
                     try:
                         pdf.close()
                     except:
                         pass
-            
             if text_content:
                 return '\n\n'.join(text_content)
             else:
                 return "Vision API 처리 후에도 텍스트를 추출할 수 없었습니다."
-                
         except Exception as e:
             return f"Vision API 처리 오류: {str(e)}"
     
@@ -1875,3 +1819,8 @@ class AIAnalyzer:
                 
         except Exception as e:
             return f"이미지 개선 실패: {str(e)}"
+    
+    def _extract_text_from_pdf_as_image(self, pdf_path: str) -> str:
+        """동기 함수에서 비동기 이미지 추출 함수 호출"""
+        import asyncio
+        return asyncio.run(self._extract_text_from_pdf_as_image_async(pdf_path))
