@@ -11,6 +11,8 @@ python-docx>=0.8.11
 
 # Image processing (for OCR)
 Pillow>=10.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
 
 # Web framework
 Flask>=2.3.0

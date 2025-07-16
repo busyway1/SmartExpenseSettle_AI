@@ -10,6 +10,10 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 import gc
 from prompts.prompt_manager import PromptManager
+from PIL import Image, ImageEnhance, ImageFilter
+import numpy as np
+import cv2
+import re
 
 class AIAnalyzer:
     def __init__(self, api_key: str = ""):
@@ -34,6 +38,75 @@ class AIAnalyzer:
         """비동기 컨텍스트 매니저 종료"""
         if self.executor:
             self.executor.shutdown(wait=True)
+    
+    def _enhance_image_for_ocr(self, image: Image.Image) -> Image.Image:
+        """OCR 정확도 향상을 위한 이미지 개선"""
+        try:
+            # 1. 해상도 향상 (2배 확대)
+            width, height = image.size
+            enhanced_image = image.resize((width * 2, height * 2), Image.Resampling.LANCZOS)
+            
+            # 2. 그레이스케일 변환 (OCR에 더 적합)
+            if enhanced_image.mode != 'L':
+                enhanced_image = enhanced_image.convert('L')
+            
+            # 3. 대비 향상
+            contrast_enhancer = ImageEnhance.Contrast(enhanced_image)
+            enhanced_image = contrast_enhancer.enhance(1.5)  # 대비 50% 증가
+            
+            # 4. 선명도 향상
+            sharpness_enhancer = ImageEnhance.Sharpness(enhanced_image)
+            enhanced_image = sharpness_enhancer.enhance(1.8)  # 선명도 80% 증가
+            
+            # 5. 밝기 조정
+            brightness_enhancer = ImageEnhance.Brightness(enhanced_image)
+            enhanced_image = brightness_enhancer.enhance(1.1)  # 밝기 10% 증가
+            
+            # 6. 노이즈 제거 (가우시안 블러 후 언샤프 마스크)
+            enhanced_image = enhanced_image.filter(ImageFilter.GaussianBlur(radius=0.5))
+            enhanced_image = enhanced_image.filter(ImageFilter.UnsharpMask(radius=1, percent=150, threshold=3))
+            
+            return enhanced_image
+            
+        except Exception as e:
+            print(f"이미지 개선 중 오류: {str(e)}")
+            return image  # 오류 시 원본 반환
+    
+    def _enhance_image_with_opencv(self, image: Image.Image) -> Image.Image:
+        """OpenCV를 사용한 고급 이미지 개선 (선택적)"""
+        try:
+            # PIL Image를 OpenCV 형식으로 변환
+            img_array = np.array(image)
+            
+            # 그레이스케일 변환
+            if len(img_array.shape) == 3:
+                gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+            else:
+                gray = img_array
+            
+            # 1. 적응형 히스토그램 평활화 (CLAHE)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            enhanced = clahe.apply(gray)
+            
+            # 2. 바이래터럴 필터로 노이즈 제거하면서 엣지 보존
+            enhanced = cv2.bilateralFilter(enhanced, 9, 75, 75)
+            
+            # 3. 언샤프 마스크로 선명도 향상
+            kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+            enhanced = cv2.filter2D(enhanced, -1, kernel)
+            
+            # 4. 모폴로지 연산으로 텍스트 선명도 향상
+            kernel = np.ones((1,1), np.uint8)
+            enhanced = cv2.morphologyEx(enhanced, cv2.MORPH_CLOSE, kernel)
+            
+            # OpenCV 배열을 PIL Image로 변환
+            enhanced_image = Image.fromarray(enhanced)
+            
+            return enhanced_image
+            
+        except Exception as e:
+            print(f"OpenCV 이미지 개선 중 오류: {str(e)}")
+            return image  # 오류 시 원본 반환
     
     async def extract_text_from_file_async(self, file_path: str) -> str:
         """파일에서 텍스트 추출 (비동기식)"""
@@ -297,13 +370,30 @@ class AIAnalyzer:
         try:
             if not self.sync_client:
                 return "OpenAI API 키가 설정되지 않았습니다."
-                
-            # 이미지를 바이트로 변환 (전처리 없이)
-            with open(image_path, 'rb') as img_file:
-                img_bytes = img_file.read()
             
-            # base64로 인코딩
-            encoded_image = base64.b64encode(img_bytes).decode('utf-8')
+            # 이미지 개선 처리
+            try:
+                with Image.open(image_path) as img:
+                    # 이미지 개선 적용
+                    enhanced_img = self._enhance_image_for_ocr(img)
+                    
+                    # 개선된 이미지를 바이트로 변환
+                    img_bytes = io.BytesIO()
+                    enhanced_img.save(img_bytes, format='PNG', quality=95)
+                    img_bytes.seek(0)
+                    
+                    # base64로 인코딩
+                    encoded_image = base64.b64encode(img_bytes.getvalue()).decode('utf-8')
+                    
+                    # 메모리 정리
+                    img_bytes.close()
+                    
+            except Exception as enhance_error:
+                print(f"이미지 개선 실패, 원본 사용: {str(enhance_error)}")
+                # 개선 실패 시 원본 이미지 사용
+                with open(image_path, 'rb') as img_file:
+                    img_bytes = img_file.read()
+                encoded_image = base64.b64encode(img_bytes).decode('utf-8')
             
             # 파일 확장자에 따른 MIME 타입 결정
             file_ext = os.path.splitext(image_path)[1].lower()
@@ -1209,17 +1299,41 @@ class AIAnalyzer:
         return individual_docs if individual_docs else [{'text': page['text'], 'page_number': page['number']} for page in page_texts]
     
     def _split_export_declarations_with_pages(self, page_texts: List[Dict]) -> List[Dict]:
-        """수출신고필증 개별 문서 분리 (페이지 번호 포함)"""
-        individual_docs = []
+        """수출신고필증 개별 문서 분리 (신고번호 기준 통합)"""
+        import re
+        docs_by_report_number = {}
+        page_numbers_by_report_number = {}
+        unknown_count = 0
+        
+        # 신고번호 패턴 (예: 2024-123456789, 123-45-67890 등)
+        report_number_pattern = re.compile(r'(\d{4}-\d{6,}|\d{3}-\d{2}-\d{5,})')
         
         for page in page_texts:
             text = page['text']
             page_number = page['number']
-            # 수출신고필증의 시작을 나타내는 키워드 확인
-            if any(keyword in text.lower() for keyword in ['수출신고필증', '신고번호', '송품장부호', '세번부호']):
-                individual_docs.append({'text': text, 'page_number': page_number})
+            # 신고번호 추출
+            match = report_number_pattern.search(text)
+            if match:
+                report_number = match.group(0)
+            else:
+                # 신고번호가 없으면 임시 그룹에 넣음
+                report_number = f"UNKNOWN_{unknown_count}"
+                unknown_count += 1
+            
+            if report_number not in docs_by_report_number:
+                docs_by_report_number[report_number] = []
+                page_numbers_by_report_number[report_number] = []
+            docs_by_report_number[report_number].append(text)
+            page_numbers_by_report_number[report_number].append(page_number)
         
-        return individual_docs if individual_docs else [{'text': page['text'], 'page_number': page['number']} for page in page_texts]
+        # 각 신고번호별로 페이지 텍스트 합치기
+        result = []
+        for report_number, texts in docs_by_report_number.items():
+            merged_text = '\n\n'.join(texts)
+            # 대표 페이지 번호는 첫 페이지로
+            first_page = min(page_numbers_by_report_number[report_number])
+            result.append({'text': merged_text, 'page_number': first_page, 'report_number': report_number})
+        return result
     
     def _split_invoices_with_pages(self, page_texts: List[Dict]) -> List[Dict]:
         """인보이스 개별 문서 분리 (페이지 번호 포함)"""
@@ -1255,7 +1369,7 @@ class AIAnalyzer:
             text = page['text']
             page_number = page['number']
             # 이체확인증의 시작을 나타내는 키워드 확인
-            if any(keyword in text.lower() for keyword in ['이체확인증', '입출금내역', '송금증', '이체금액', '출금금액', '받는분']):
+            if any(keyword in text.lower() for keyword in ['이체확인증', '이체확인서', '입출금내역', '확인증', '송금증', '송금확인증', '이체결과리스트', '이체결과확인서', '무통장단체입금확인서', '이체금액', '출금금액', '받는분', '계좌번호']):
                 individual_docs.append({'text': text, 'page_number': page_number})
         
         return individual_docs if individual_docs else [{'text': page['text'], 'page_number': page['number']} for page in page_texts]
@@ -1372,11 +1486,11 @@ class AIAnalyzer:
                 return "수출신고필증"
             
             # 세금계산서
-            elif any(keyword in page_text_lower for keyword in ['세금계산서', '공급가액', '부가세', '공급자', '공급받는자', '승인번호', '사업자등록번호']):
+            elif any(keyword in page_text_lower for keyword in ['세금계산서', '사업자등록번호','영세율 세금계산서']):
                 return "세금계산서"
             
             # 인보이스 (commercial invoice는 제외)
-            elif any(keyword in page_text_lower for keyword in ['invoice', '인보이스', '송품장', 'bill to', 'ship to', 'amount', 'krw', '원화']) and 'commercial invoice' not in page_text_lower:
+            elif any(keyword in page_text_lower for keyword in ['invoice No', 'invoice', '인보이스', '송품장', '청구금액']) and 'commercial invoice' not in page_text_lower:
                 return "인보이스"
             
             # BL (Bill of Lading, Way Bill, B/L 등)
@@ -1384,11 +1498,11 @@ class AIAnalyzer:
                 return "BL"
             
             # Packing List
-            elif any(keyword in page_text_lower for keyword in ['packing list', 'p/l', 'description', 'quantity', 'weight']):
+            elif any(keyword in page_text_lower for keyword in ['packing list', 'p/l','Date of invoice']):
                 return "Packing List"
             
             # 이체확인증/송금증
-            elif any(keyword in page_text_lower for keyword in ['이체확인증', '입출금내역', '송금증', '이체금액', '출금금액', '계좌번호', '거래일시']):
+            elif any(keyword in page_text_lower for keyword in ['이체확인증', '이체확인서', '입출금내역', '확인증', '송금증', '송금확인증', '이체결과리스트', '이체결과확인서', '무통장단체입금확인서', '이체금액', '출금금액', '받는분', '계좌번호']):
                 return "이체확인증"
             
             # 기타 상업서류
@@ -1637,9 +1751,12 @@ class AIAnalyzer:
                         # 페이지를 이미지로 변환 (고해상도)
                         img = page.to_image(resolution=300)
                         if img:
-                            # 이미지를 바이트로 변환
+                            # 이미지 개선 적용
+                            enhanced_img = self._enhance_image_for_ocr(img.original)
+                            
+                            # 개선된 이미지를 바이트로 변환
                             img_bytes = io.BytesIO()
-                            img.original.save(img_bytes, format='PNG', quality=95)
+                            enhanced_img.save(img_bytes, format='PNG', quality=95)
                             img_bytes.seek(0)
                             
                             # base64로 인코딩
@@ -1737,3 +1854,24 @@ class AIAnalyzer:
                 
         except Exception as e:
             return f"Vision API 처리 오류: {str(e)}"
+    
+    def enhance_image_file(self, input_path: str, output_path: str = None, use_opencv: bool = False) -> str:
+        """이미지 파일 개선 (테스트용)"""
+        try:
+            with Image.open(input_path) as img:
+                if use_opencv:
+                    enhanced_img = self._enhance_image_with_opencv(img)
+                else:
+                    enhanced_img = self._enhance_image_for_ocr(img)
+                
+                if output_path is None:
+                    # 원본 파일명에 _enhanced 추가
+                    base_name = os.path.splitext(input_path)[0]
+                    ext = os.path.splitext(input_path)[1]
+                    output_path = f"{base_name}_enhanced{ext}"
+                
+                enhanced_img.save(output_path, quality=95)
+                return f"이미지 개선 완료: {output_path}"
+                
+        except Exception as e:
+            return f"이미지 개선 실패: {str(e)}"

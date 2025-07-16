@@ -16,7 +16,7 @@ def get_bill_of_lading_prompt(text: str, file_name: str = "", page_number: int =
     page_info = f"**현재 페이지 번호: {page_number}**" if page_number is not None else ""
     
     return base_prompt + f"""
-이 BL(Bill of Lading, Way Bill, B/L 등)에서 **다음 10개 필드만** 정확히 추출해주세요.
+이 BL(Bill of Lading, Way Bill, B/L 등)에서 **다음 9개 필드만** 정확히 추출해주세요.
 
 {page_info}
 
@@ -34,7 +34,7 @@ def get_bill_of_lading_prompt(text: str, file_name: str = "", page_number: int =
 - 단, B/L 번호가 명확히 다르거나, 페이지가 연속적이지 않으면 별도 문서로 처리하세요.
   [예시] 1페이지: B/L 번호 없음, 2페이지: B/L 번호 12345 → 두 페이지 모두 B/L 번호 12345로 묶어서 하나의 문서로 처리
 
-**추출할 필드 (10개만):**
+**추출할 필드 (9개만):**
 1. B/L 번호: Bill of Lading No., B/L No., B/L NUMBER 등으로 식별됨.
 2. 송품장번호: NO & DATE OF INVOICE, INVOICE NO. 등으로 식별됨.
 3. 출발지: Port of loading 
@@ -44,10 +44,9 @@ def get_bill_of_lading_prompt(text: str, file_name: str = "", page_number: int =
 7. 컨테이너번호: container No. (보통 Container and Seal No. 로 함께 기재된 경우 '/' 의 구분자로 Seal No.와 구분할 수 있음.)
 8. 일자: Date Laden on Board, ON BOARD DATE, Date SHIPPED ON BOARD, Place and Date of Issue 등으로 식별됨. YYYY-MM-DD 형식으로 추출해주세요.
 9. 파일명: "{file_name}"
-10. 페이지번호: {page_number if page_number is not None else "실제 파일의 페이지 번호 (예: 1, 2, 3...)"}
 
 **중요한 지침:**
-1. **위 10개 필드만 추출하고, 다른 정보는 절대 포함하지 마세요**
+1. **위 9개 필드만 추출하고, 다른 정보는 절대 포함하지 마세요**
 2. B/L 번호가 다른 BL은 각각 개별 문서로 처리
 3. 각 문서마다 페이지 번호를 반드시 포함 (실제 파일의 페이지 번호)
 4. 존재하지 않는 정보는 "정보 없음"으로 표시
