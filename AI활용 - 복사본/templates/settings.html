@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>설정 - AI 증빙자료 분석</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.2em;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .setting-section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            color: #333;
+            font-size: 1.3em;
+            font-weight: 600;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+            font-family: monospace;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .info-box {
+            background: #e3f2fd;
+            padding: 20px;
+            border-radius: 12px;
+            border-left: 4px solid #2196f3;
+            margin-bottom: 20px;
+        }
+
+        .info-box h4 {
+            color: #1976d2;
+            margin-bottom: 10px;
+        }
+
+        .info-box p {
+            color: #1565c0;
+            line-height: 1.6;
+            margin-bottom: 10px;
+        }
+
+        .info-box ul {
+            color: #1565c0;
+            padding-left: 20px;
+        }
+
+        .info-box li {
+            margin-bottom: 5px;
+        }
+
+        .warning-box {
+            background: #fff3cd;
+            padding: 20px;
+            border-radius: 12px;
+            border-left: 4px solid #ffc107;
+            margin-bottom: 20px;
+        }
+
+        .warning-box h4 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+
+        .warning-box p {
+            color: #856404;
+            line-height: 1.6;
+        }
+
+        .status-message {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-weight: 500;
+            display: none;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .nav-links {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .nav-link {
+            color: #667eea;
+            text-decoration: none;
+            padding: 10px 20px;
+            border: 2px solid #667eea;
+            border-radius: 20px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .toggle-password {
+            background: none;
+            border: none;
+            color: #666;
+            cursor: pointer;
+            font-size: 1.2em;
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .input-container {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⚙️ 설정</h1>
+
+        <div id="status-message" class="status-message"></div>
+
+        <div class="info-box">
+            <h4>🔑 OpenAI API 키 설정</h4>
+            <p>AI 분석 기능을 사용하려면 OpenAI API 키가 필요합니다.</p>
+            <ul>
+                <li>OpenAI 웹사이트에서 API 키를 발급받으세요</li>
+                <li>API 키는 안전하게 저장되며 서버에 전송되지 않습니다</li>
+                <li>세션 동안만 유지되며 브라우저를 닫으면 초기화됩니다</li>
+            </ul>
+        </div>
+
+        <div class="warning-box">
+            <h4>⚠️ 주의사항</h4>
+            <p>API 키는 민감한 정보입니다. 다른 사람과 공유하지 마시고, 안전하게 보관하세요.</p>
+        </div>
+
+        <div class="setting-section">
+            <div class="section-title">OpenAI API 설정</div>
+            <form id="api-key-form">
+                <div class="form-group">
+                    <label for="api-key" class="form-label">API 키</label>
+                    <div class="input-container">
+                        <input type="password" id="api-key" class="form-input" placeholder="sk-..." required>
+                        <button type="button" class="toggle-password" onclick="togglePassword()">👁️</button>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">💾 API 키 저장</button>
+            </form>
+        </div>
+
+        <div class="setting-section">
+            <div class="section-title">API 키 테스트</div>
+            <p style="color: #666; margin-bottom: 15px;">저장된 API 키가 올바르게 작동하는지 테스트해보세요.</p>
+            <button type="button" class="btn btn-secondary" onclick="testApiKey()">🧪 API 키 테스트</button>
+        </div>
+
+        <div class="nav-links">
+            <a href="/" class="nav-link">🏠 홈으로</a>
+            <a href="/analyze" class="nav-link">🔍 AI 분석</a>
+            <a href="/files" class="nav-link">📂 파일 목록</a>
+        </div>
+    </div>
+
+    <script>
+        function togglePassword() {
+            const input = document.getElementById('api-key');
+            const button = document.querySelector('.toggle-password');
+            
+            if (input.type === 'password') {
+                input.type = 'text';
+                button.textContent = '🙈';
+            } else {
+                input.type = 'password';
+                button.textContent = '👁️';
+            }
+        }
+
+        function showMessage(message, type) {
+            const statusDiv = document.getElementById('status-message');
+            statusDiv.textContent = message;
+            statusDiv.className = `status-message ${type}`;
+            statusDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        document.getElementById('api-key-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const apiKey = document.getElementById('api-key').value;
+            
+            try {
+                const response = await fetch('/api/set-key', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ api_key: apiKey })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage(result.message, 'success');
+                } else {
+                    showMessage(result.error, 'error');
+                }
+                
+            } catch (error) {
+                showMessage('API 키 설정 중 오류가 발생했습니다.', 'error');
+            }
+        });
+
+        async function testApiKey() {
+            try {
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        file_name: 'test',
+                        analysis_type: '요약',
+                        custom_prompt: null
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.error && 'API 키' in result.error) {
+                    showMessage('API 키가 설정되지 않았거나 유효하지 않습니다.', 'error');
+                } else {
+                    showMessage('API 키가 정상적으로 작동합니다!', 'success');
+                }
+                
+            } catch (error) {
+                showMessage('API 키 테스트 중 오류가 발생했습니다.', 'error');
+            }
+        }
+    </script>
+</body>
+</html> 

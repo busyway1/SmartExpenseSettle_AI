@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>업로드 성공 - AI 증빙자료 분석</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+
+        .success-icon {
+            font-size: 4em;
+            color: #28a745;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 2.2em;
+            font-weight: 600;
+        }
+
+        .file-info {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 12px;
+            margin: 30px 0;
+            border: 1px solid #e9ecef;
+        }
+
+        .file-info h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .info-item:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .info-value {
+            color: #667eea;
+            font-weight: 500;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+            transform: translateY(-2px);
+        }
+
+        .next-steps {
+            margin-top: 30px;
+            padding: 20px;
+            background: #e3f2fd;
+            border-radius: 12px;
+            border-left: 4px solid #2196f3;
+        }
+
+        .next-steps h4 {
+            color: #1976d2;
+            margin-bottom: 10px;
+        }
+
+        .next-steps p {
+            color: #1565c0;
+            line-height: 1.6;
+        }
+
+        .nav-links {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .nav-link {
+            color: #667eea;
+            text-decoration: none;
+            padding: 10px 20px;
+            border: 2px solid #667eea;
+            border-radius: 20px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .nav-link:hover {
+            background: #667eea;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">✅</div>
+        <h1>업로드 성공!</h1>
+        <p>파일이 성공적으로 업로드되었습니다.</p>
+
+        <div class="file-info">
+            <h3>📄 파일 정보</h3>
+            <div class="info-item">
+                <span class="info-label">파일명:</span>
+                <span class="info-value">{{ file_info.original_name }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">파일 타입:</span>
+                <span class="info-value">{{ file_info.file_type }}</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">파일 크기:</span>
+                <span class="info-value">{{ "{:,}".format(file_info.file_size) }} bytes</span>
+            </div>
+            <div class="info-item">
+                <span class="info-label">저장 파일명:</span>
+                <span class="info-value">{{ file_info.stored_name }}</span>
+            </div>
+        </div>
+
+        <div class="next-steps">
+            <h4>🔍 다음 단계</h4>
+            <p>이제 업로드된 파일을 AI가 분석하여 필요한 정보를 추출할 수 있습니다. 
+            "AI 분석" 버튼을 클릭하여 진행하세요.</p>
+        </div>
+
+        <div class="action-buttons">
+            <a href="/analyze" class="btn btn-primary">🤖 AI 분석하기</a>
+            <a href="/files" class="btn btn-secondary">📂 파일 목록</a>
+            <a href="/download/{{ file_info.stored_name }}" class="btn btn-success">📥 다운로드</a>
+        </div>
+
+        <div class="nav-links">
+            <a href="/" class="nav-link">🏠 홈으로</a>
+            <a href="/" class="nav-link">📤 다른 파일 업로드</a>
+        </div>
+    </div>
+</body>
+</html> 
