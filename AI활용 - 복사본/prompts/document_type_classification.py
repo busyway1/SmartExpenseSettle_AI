@@ -10,9 +10,9 @@ def get_document_type_classification_prompt(text: str) -> str:
 - 수출신고필증
 - 세금계산서
 - 인보이스
-- 선하증권(BL)
+- BL
 - 이체확인증
-- 포장명세서(Packing List)
+- Packing List
 - 미분류
 
 📋 문서 유형별 고유 키워드
@@ -29,7 +29,7 @@ def get_document_type_classification_prompt(text: str) -> str:
 3. 인보이스
 INVOICE - 기본 인보이스
 
-4. 선하증권(BL)
+4. BL
 BILL OF LADING - 선하증권 영문명
 SHIPPER - 화주(송하인)
 CONSIGNEE - 수하인
@@ -39,12 +39,12 @@ CONSIGNEE - 수하인
 송금인 - 송금하는 사람
 수취인, 받는분, 받으시는분 - 받는 사람
 
-6. 포장명세서(Packing List)
+6. Packing List
 PACKING LIST - 문서 제목
 
 문서 내용:
 {text}
 
-정답 예시: \"수출신고필증\"
+정답 예시: \"Packing List\"
 반드시 위 목록 중 하나만, 추가 설명 없이 한글로만 답변하세요.
 """ 

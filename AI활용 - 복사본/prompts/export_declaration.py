@@ -52,7 +52,7 @@ def get_export_declaration_prompt(text: str, file_name: str = "", page_number: i
 
 5. **페이지번호**: 
    - 값: {page_number if page_number is not None else "실제 파일의 페이지 번호"}
-   - 주의: 수출신고필증 하나가 여러 페이지일 경우 첫 페이지 번호 반환
+   - 주의: 수출신고필증 하나가 여러 페이지일 경우 첫 페이지의 실제 파일 상 페이지 번호 반환(예 : 파일에서 5~8페이지가 하나의 수출신고필증일 경우 페이지 번호는 5로 반환)
 
 6. **총중량**: 
    - 위치: 44번 항목 총중량(페이지의 왼쪽에 위치하며 운임 항목 바로 위에 위치함.)
