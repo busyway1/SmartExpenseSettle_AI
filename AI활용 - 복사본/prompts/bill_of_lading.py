@@ -61,8 +61,8 @@ JSON 형태로 정리해주세요. 예시:
   "컨테이너번호": "CONT1234567",
   "출발지": "SEOUL",
   "도착지": "BUSAN",
-    "일자": "2024-01-01",
-    "파일명": "{file_name}",
-    "페이지번호": {page_number if page_number is not None else 1}
+  "일자": "2024-01-01",
+  "파일명": "{file_name}",
+  "페이지번호": {page_number if page_number is not None else 1}
   }}
 ]""" 
