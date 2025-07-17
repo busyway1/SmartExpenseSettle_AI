@@ -28,9 +28,11 @@ def get_document_type_classification_prompt(text: str) -> str:
 
 3. 인보이스
 INVOICE - 기본 인보이스
+PRO FORMA INVOICE - 견적서 성격의 인보이스
+- 'COMMERCIAL INVOICE'는 인보이스가 아닙니다.
 
 4. BL
-BILL OF LADING - 선하증권 영문명
+BILL OF LADING,Bill of Lading, Way Bill, B/L- 선하증권 영문명 (문서 제목)
 SHIPPER - 화주(송하인)
 CONSIGNEE - 수하인
 

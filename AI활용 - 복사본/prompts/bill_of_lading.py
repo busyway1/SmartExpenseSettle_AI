@@ -35,14 +35,24 @@ def get_bill_of_lading_prompt(text: str, file_name: str = "", page_number: int =
   [예시] 1페이지: B/L 번호 없음, 2페이지: B/L 번호 12345 → 두 페이지 모두 B/L 번호 12345로 묶어서 하나의 문서로 처리
 
 **추출할 필드 (9개만):**
-1. B/L 번호: Bill of Lading No., B/L No., B/L NUMBER 등으로 식별됨.
-2. 송품장번호: NO & DATE OF INVOICE, INVOICE NO. 등으로 식별됨.
-3. 출발지: Port of loading 
-4. 도착지: Port of discharge 
-5. 총중량: gross weight 
+1. B/L 번호
+  - Bill of Lading No., B/L No., B/L NUMBER 등으로 식별됨.
+2. 송품장번호
+  - NO & DATE OF INVOICE, INVOICE NO. 등으로 식별됨.
+3. 출발지
+  - Port of loading 
+4. 도착지
+  - Port of discharge
+5. 총중량
+  - gross weight
+  - KG 등 단위는 제외하고 숫자만 가져와주세요. 쉼표(,) 또는 점(.)으로 구분된 숫자 포함
 6. 페이지번호: {page_number if page_number is not None else "실제 파일의 페이지 번호 (예: 1, 2, 3...)"}
-7. 컨테이너번호: container No. (보통 Container and Seal No. 로 함께 기재된 경우 '/' 의 구분자로 Seal No.와 구분할 수 있음.)
-8. 일자: Date Laden on Board, ON BOARD DATE, Date SHIPPED ON BOARD, Place and Date of Issue 등으로 식별됨. YYYY-MM-DD 형식으로 추출해주세요.
+7. 컨테이너번호
+  - container No.
+  - Container and Seal No. 처럼 두 가지 번호가 함께 기재된 경우 '/' 의 구분자로 Seal No.와 구분할 수 있습니다.
+8. 일자
+  - Date Laden on Board, ON BOARD DATE, Date SHIPPED ON BOARD, Place and Date of Issue 등으로 식별됩니다.
+  - YYYY-MM-DD 형식으로 추출해주세요.
 9. 파일명: "{file_name}"
 
 **중요한 지침:**
@@ -51,6 +61,12 @@ def get_bill_of_lading_prompt(text: str, file_name: str = "", page_number: int =
 3. 각 문서마다 페이지 번호를 반드시 포함 (실제 파일의 페이지 번호)
 4. 존재하지 않는 정보는 "정보 없음"으로 표시
 5. **요청하지 않은 필드는 절대 추가하지 마세요**
+
+**데이터 검증 및 품질 관리:**
+1. **B/L번호 검증**: B/L번호는 필수 정보이므로 반드시 추출해야 함
+2. **날짜 형식 통일**: 모든 날짜는 YYYY-MM-DD 형식으로 출력
+3. **중량 단위 통일**: 모든 중량은 KG 단위로 출력
+4. **null 값 처리**: 빈 값은 "정보 없음"으로 통일
 
 JSON 형태로 정리해주세요. 예시:
 [

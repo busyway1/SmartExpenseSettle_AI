@@ -492,7 +492,7 @@
                     let documentCountsHtml = '';
                     if (result.document_counts) {
                         documentCountsHtml = '<div style="margin-bottom: 15px; background: #e8f5e8; padding: 15px; border-radius: 8px; border: 1px solid #c3e6c3;">';
-                        documentCountsHtml += '<h5 style="margin: 0 0 10px 0; color: #2d5a2d;">📊 인식된 문서 현황:</h5>';
+                        documentCountsHtml += '<h5 style="margin: 0 0 10px 0; color: #2d5a2d;">📊 분석 성공한 문서 현황:</h5>';
                         for (const [docType, count] of Object.entries(result.document_counts)) {
                             documentCountsHtml += `<span style="display: inline-block; margin-right: 15px; padding: 5px 10px; background: white; border-radius: 5px; border: 1px solid #c3e6c3;"><strong>${docType}:</strong> ${count}개</span>`;
                         }

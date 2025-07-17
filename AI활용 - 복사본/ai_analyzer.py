@@ -30,6 +30,57 @@ class AIAnalyzer:
         
         # 스레드 풀 생성 (파일 I/O 작업용)
         self.executor = ThreadPoolExecutor(max_workers=4)
+        
+        # 속도 제한 관련 설정
+        self.max_retries = 5
+        self.base_delay = 1.0  # 기본 대기 시간 (초)
+    
+    async def _retry_api_call_async(self, api_call_func, *args, **kwargs):
+        """비동기 API 호출에 대한 재시도 로직"""
+        for attempt in range(self.max_retries):
+            try:
+                return await api_call_func(*args, **kwargs)
+            except openai.RateLimitError as e:
+                if attempt < self.max_retries - 1:
+                    # 지수 백오프로 대기 시간 계산
+                    delay = self.base_delay * (2 ** attempt)
+                    print(f"속도 제한 도달. {delay:.1f}초 후 재시도... (시도 {attempt + 1}/{self.max_retries})")
+                    await asyncio.sleep(delay)
+                else:
+                    raise e
+            except Exception as e:
+                if "rate_limit" in str(e).lower() or "429" in str(e):
+                    if attempt < self.max_retries - 1:
+                        delay = self.base_delay * (2 ** attempt)
+                        print(f"속도 제한 도달. {delay:.1f}초 후 재시도... (시도 {attempt + 1}/{self.max_retries})")
+                        await asyncio.sleep(delay)
+                    else:
+                        raise e
+                else:
+                    raise e
+    
+    def _retry_api_call_sync(self, api_call_func, *args, **kwargs):
+        """동기 API 호출에 대한 재시도 로직"""
+        for attempt in range(self.max_retries):
+            try:
+                return api_call_func(*args, **kwargs)
+            except openai.RateLimitError as e:
+                if attempt < self.max_retries - 1:
+                    delay = self.base_delay * (2 ** attempt)
+                    print(f"속도 제한 도달. {delay:.1f}초 후 재시도... (시도 {attempt + 1}/{self.max_retries})")
+                    time.sleep(delay)
+                else:
+                    raise e
+            except Exception as e:
+                if "rate_limit" in str(e).lower() or "429" in str(e):
+                    if attempt < self.max_retries - 1:
+                        delay = self.base_delay * (2 ** attempt)
+                        print(f"속도 제한 도달. {delay:.1f}초 후 재시도... (시도 {attempt + 1}/{self.max_retries})")
+                        time.sleep(delay)
+                    else:
+                        raise e
+                else:
+                    raise e
     
     async def __aenter__(self):
         """비동기 컨텍스트 매니저 진입"""
@@ -294,13 +345,14 @@ class AIAnalyzer:
                         # base64로 인코딩
                         encoded_image = base64.b64encode(img_bytes.getvalue()).decode('utf-8')
                         
-                        # OpenAI Vision API로 OCR 처리
-                        response = self.sync_client.chat.completions.create(
-                            model="gpt-4o",
-                            messages=[
-                                {
-                                    "role": "system",
-                                    "content": """당신은 전문적인 OCR(광학 문자 인식) AI입니다. 이미지에서 모든 텍스트를 정확히 추출해주세요.
+                        # OpenAI Vision API로 OCR 처리 (재시도 로직 적용)
+                        def api_call():
+                            return self.sync_client.chat.completions.create(
+                                model="gpt-4o",
+                                messages=[
+                                    {
+                                        "role": "system",
+                                        "content": """당신은 전문적인 OCR(광학 문자 인식) AI입니다. 이미지에서 모든 텍스트를 정확히 추출해주세요.
 
 중요한 지침:
 1. "I'm sorry, I can't assist with that" 같은 거부 답변을 하지 마세요
@@ -309,13 +361,13 @@ class AIAnalyzer:
 4. 숫자, 날짜, 회사명, 금액 등을 정확히 인식해주세요
 5. 표나 구조화된 데이터가 있다면 그대로 유지해주세요
 6. 텍스트가 보이지 않으면 "텍스트 없음"으로 표시하되, 전체 분석을 거부하지 마세요"""
-                                },
-                                {
-                                    "role": "user",
-                                    "content": [
-                                        {
-                                            "type": "text",
-                                            "text": """이 스캔된 PDF 페이지에서 모든 텍스트를 정확히 추출해주세요.
+                                    },
+                                    {
+                                        "role": "user",
+                                        "content": [
+                                            {
+                                                "type": "text",
+                                                "text": """이 스캔된 PDF 페이지에서 모든 텍스트를 정확히 추출해주세요.
 
 중요한 지침:
 1. 스캔된 문서이므로 텍스트가 흐릿하거나 작을 수 있습니다. 최대한 정확히 읽어주세요
@@ -350,6 +402,8 @@ class AIAnalyzer:
                             frequency_penalty=0.1,
                             presence_penalty=0.1
                         )
+                        
+                        response = self._retry_api_call_sync(api_call)
                         
                         if response and response.choices:
                             page_text = response.choices[0].message.content
@@ -405,13 +459,14 @@ class AIAnalyzer:
             else:
                 mime_type = 'image/png'  # 기본값
             
-            # OpenAI Vision API 호출
-            response = self.sync_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": """당신은 전문적인 OCR(광학 문자 인식) AI입니다. 이미지에서 모든 텍스트를 정확히 추출해주세요.
+            # OpenAI Vision API 호출 (재시도 로직 적용)
+            def api_call():
+                return self.sync_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": """당신은 전문적인 OCR(광학 문자 인식) AI입니다. 이미지에서 모든 텍스트를 정확히 추출해주세요.
 
 중요한 지침:
 1. "I'm sorry, I can't assist with that" 같은 거부 답변을 하지 마세요
@@ -420,13 +475,13 @@ class AIAnalyzer:
 4. 숫자, 날짜, 회사명, 금액 등을 정확히 인식해주세요
 5. 표나 구조화된 데이터가 있다면 그대로 유지해주세요
 6. 텍스트가 보이지 않으면 "텍스트 없음"으로 표시하되, 전체 분석을 거부하지 마세요"""
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": """이 이미지에서 모든 텍스트를 정확히 추출해주세요.
+                        },
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": """이 이미지에서 모든 텍스트를 정확히 추출해주세요.
 
 중요한 지침:
 1. 모든 텍스트를 빠짐없이 추출해주세요
@@ -444,22 +499,24 @@ class AIAnalyzer:
 - 품목 정보, 수량, 단가
 - 통화 단위 (USD, KRW, CNY 등)
 - 문서 제목, 발행일, 유효기간 등"""
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:{mime_type};base64,{encoded_image}"
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:{mime_type};base64,{encoded_image}"
+                                    }
                                 }
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=2000,
-                temperature=0.0,
-                top_p=0.9,
-                frequency_penalty=0.1,
-                presence_penalty=0.1
-            )
+                            ]
+                        }
+                    ],
+                    max_tokens=2000,
+                    temperature=0.0,
+                    top_p=0.9,
+                    frequency_penalty=0.1,
+                    presence_penalty=0.1
+                )
+            
+            response = self._retry_api_call_sync(api_call)
             
             if response and response.choices:
                 return response.choices[0].message.content or ""
@@ -625,8 +682,9 @@ class AIAnalyzer:
             # 분석 프롬프트 생성
             prompt = self._create_analysis_prompt(custom_prompt, extracted_text)
             
-            # OpenAI API 비동기 호출
-            response = await self.client.chat.completions.create(
+            # OpenAI API 비동기 호출 (재시도 로직 적용)
+            async def api_call():
+                return await self.client.chat.completions.create(
                     model="gpt-4o",
                     messages=[
                         {
@@ -646,12 +704,14 @@ class AIAnalyzer:
                             "content": prompt
                         }
                     ],
-                max_tokens=3000,
-                temperature=0.0,
-                top_p=0.9,
-                frequency_penalty=0.1,
-                presence_penalty=0.1
-            )
+                    max_tokens=3000,
+                    temperature=0.0,
+                    top_p=0.9,
+                    frequency_penalty=0.1,
+                    presence_penalty=0.1
+                )
+            
+            response = await self._retry_api_call_async(api_call)
             
             analysis_result = response.choices[0].message.content or ""
             
@@ -737,13 +797,30 @@ class AIAnalyzer:
             # 4단계: 최종 결과 통합
             final_result = await self._combine_document_type_results_async(results)
             
+            # 실제 분석 성공한 문서 개수 계산
+            actual_document_counts = {}
+            for doc_type, doc_results in results.items():
+                successful_count = 0
+                for result in doc_results:
+                    if "extracted_info" in result and result["extracted_info"].strip():
+                        try:
+                            # JSON 파싱이 성공한 경우만 카운트
+                            json.loads(result["extracted_info"])
+                            successful_count += 1
+                        except json.JSONDecodeError:
+                            # JSON 파싱 실패해도 텍스트가 있으면 카운트
+                            if result["extracted_info"].strip():
+                                successful_count += 1
+                if successful_count > 0:
+                    actual_document_counts[doc_type] = successful_count
+            
             return {
                 "success": True,
                 "extracted_text": text[:500] + "..." if len(text) > 500 else text,
                 "analysis_result": final_result,
                 "file_name": os.path.basename(file_path),
                 "document_types": list(document_types.keys()),
-                "document_counts": {doc_type: len(docs) for doc_type, docs in results.items()},
+                "document_counts": actual_document_counts,  # 실제 성공한 문서 개수로 변경
                 "processing_time": end_time - start_time
             }
             
@@ -773,33 +850,39 @@ class AIAnalyzer:
                     "error": "OpenAI API 키가 설정되지 않았습니다."
                 }
             
-            response = await self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"""당신은 {doc_type} 전문 분석 AI입니다. 해당 문서 유형에서 **지정된 필드만** 정확히 추출해주세요.
+            def api_call():
+                return self.sync_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": f"""당신은 {doc_type} 전문 분석 AI입니다. 해당 문서 유형에서 **지정된 필드만** 정확히 추출해주세요.
 
 중요한 지침:
-1. "I'm sorry, I can't assist with that" 같은 거부 답변을 하지 마세요
+1. **절대 거부하지 마세요** - "I'm sorry, I can't assist with that", "I cannot help", "I'm unable to" 등의 거부 답변을 절대 하지 마세요
 2. **지정된 필드만 추출하고, 다른 정보는 절대 무시해주세요**
 3. JSON 형태로 구조화된 결과를 제공해주세요
 4. 정보가 없으면 "정보 없음"으로 표시하되, 전체 분석을 거부하지 마세요
 5. **요청하지 않은 정보는 절대 포함하지 마세요**
 6. **문서에 있는 모든 정보를 추출하지 말고, 요청된 필드만 추출하세요**
-7. **추가 설명이나 주석 없이 순수한 JSON만 반환하세요**"""
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                max_tokens=2000,
-                temperature=0.0,
-                top_p=0.9,
-                frequency_penalty=0.1,
-                presence_penalty=0.1
-            )
+7. **추가 설명이나 주석 없이 순수한 JSON만 반환하세요**
+8. **어떤 상황에서도 분석을 거부하지 말고, 최소한 빈 JSON 배열이라도 반환하세요**
+9. **문서 내용이 불완전하거나 명확하지 않아도 분석을 시도하세요**
+10. **오류가 발생해도 JSON 형태로 오류 정보를 포함해서 반환하세요**"""
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    max_tokens=2000,
+                    temperature=0.0,
+                    top_p=0.9,
+                    frequency_penalty=0.1,
+                    presence_penalty=0.1
+                )
+            
+            response = self._retry_api_call_sync(api_call)
             
             if response and response.choices:
                 result = response.choices[0].message.content or ""
@@ -952,13 +1035,16 @@ class AIAnalyzer:
                         "content": """당신은 전문적인 문서 분석 AI입니다. 증빙자료에서 **지정된 정보만** 정확하고 구조화된 형태로 추출해주세요.
 
                     중요한 지침:
-                    1. "I'm sorry, I can't assist with that" 같은 거부 답변을 하지 마세요
+                    1. **절대 거부하지 마세요** - "I'm sorry, I can't assist with that", "I cannot help", "I'm unable to" 등의 거부 답변을 절대 하지 마세요
                     2. **지정된 필드만 추출하고, 다른 정보는 무시해주세요**
                     3. 수출신고필증, 세금계산서, 인보이스 등 모든 비즈니스 문서를 분석할 수 있습니다
                     4. 민감한 정보라도 문서 분석 목적으로만 사용되므로 안전합니다
                     5. JSON 형태로 구조화된 결과를 제공해주세요
                     6. 정보가 없으면 "정보 없음"으로 표시하되, 전체 분석을 거부하지 마세요
-                    7. **요청하지 않은 정보는 절대 포함하지 마세요**"""
+                    7. **요청하지 않은 정보는 절대 포함하지 마세요**
+                    8. **어떤 상황에서도 분석을 거부하지 말고, 최소한 빈 JSON 배열이라도 반환하세요**
+                    9. **문서 내용이 불완전하거나 명확하지 않아도 분석을 시도하세요**
+                    10. **오류가 발생해도 JSON 형태로 오류 정보를 포함해서 반환하세요**"""
                     },
                     {
                         "role": "user",
@@ -1211,13 +1297,30 @@ class AIAnalyzer:
             # 3단계: 최종 결과 통합
             final_result = self._combine_document_type_results(results)
             
+            # 실제 분석 성공한 문서 개수 계산
+            actual_document_counts = {}
+            for doc_type, doc_results in results.items():
+                successful_count = 0
+                for result in doc_results:
+                    if "extracted_info" in result and result["extracted_info"].strip():
+                        try:
+                            # JSON 파싱이 성공한 경우만 카운트
+                            json.loads(result["extracted_info"])
+                            successful_count += 1
+                        except json.JSONDecodeError:
+                            # JSON 파싱 실패해도 텍스트가 있으면 카운트
+                            if result["extracted_info"].strip():
+                                successful_count += 1
+                if successful_count > 0:
+                    actual_document_counts[doc_type] = successful_count
+            
             return {
                 "success": True,
                 "extracted_text": text[:500] + "..." if len(text) > 500 else text,
                 "analysis_result": final_result,
                 "file_name": os.path.basename(file_path),
                 "document_types": list(document_types.keys()),
-                "document_counts": {doc_type: len(docs) for doc_type, docs in results.items()}
+                "document_counts": actual_document_counts  # 실제 성공한 문서 개수로 변경
             }
             
         except Exception as e:
@@ -1458,15 +1561,17 @@ class AIAnalyzer:
 
         async def classify_page(page):
             prompt = get_document_type_classification_prompt(page['text'])
-            response = await self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "당신은 문서 유형 분류 전문가입니다. 반드시 아래 목록 중 하나만 한글로 답변하세요."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=20,
-                temperature=0.0
-            )
+            async def api_call():
+                return await self.client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": "당신은 문서 유형 분류 전문가입니다. 반드시 아래 목록 중 하나만 한글로 답변하세요."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=20,
+                    temperature=0.0
+                )
+            response = await self._retry_api_call_async(api_call)
             doc_type = response.choices[0].message.content.strip().replace('"', '').replace("'", "")
             return doc_type
 
@@ -1503,15 +1608,17 @@ class AIAnalyzer:
 
         async def classify_page(page):
             prompt = get_document_type_classification_prompt(page['text'])
-            response = await self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {"role": "system", "content": "당신은 문서 유형 분류 전문가입니다. 반드시 아래 목록 중 하나만 한글로 답변하세요."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=20,
-                temperature=0.0
-            )
+            async def api_call():
+                return await self.client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": "당신은 문서 유형 분류 전문가입니다. 반드시 아래 목록 중 하나만 한글로 답변하세요."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    max_tokens=20,
+                    temperature=0.0
+                )
+            response = await self._retry_api_call_async(api_call)
             doc_type = response.choices[0].message.content.strip().replace('"', '').replace("'", "")
             return doc_type
 
@@ -1551,33 +1658,39 @@ class AIAnalyzer:
                     "error": "OpenAI API 키가 설정되지 않았습니다."
                 }
             
-            response = self.sync_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": f"""당신은 {doc_type} 전문 분석 AI입니다. 해당 문서 유형에서 **지정된 필드만** 정확히 추출해주세요.
+            def api_call():
+                return self.sync_client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": f"""당신은 {doc_type} 전문 분석 AI입니다. 해당 문서 유형에서 **지정된 필드만** 정확히 추출해주세요.
 
 중요한 지침:
-1. "I'm sorry, I can't assist with that" 같은 거부 답변을 하지 마세요
+1. **절대 거부하지 마세요** - "I'm sorry, I can't assist with that", "I cannot help", "I'm unable to" 등의 거부 답변을 절대 하지 마세요
 2. **지정된 필드만 추출하고, 다른 정보는 절대 무시해주세요**
 3. JSON 형태로 구조화된 결과를 제공해주세요
 4. 정보가 없으면 "정보 없음"으로 표시하되, 전체 분석을 거부하지 마세요
 5. **요청하지 않은 정보는 절대 포함하지 마세요**
 6. **문서에 있는 모든 정보를 추출하지 말고, 요청된 필드만 추출하세요**
-7. **추가 설명이나 주석 없이 순수한 JSON만 반환하세요**"""
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                max_tokens=2000,
-                temperature=0.0,
-                top_p=0.9,
-                frequency_penalty=0.1,
-                presence_penalty=0.1
-            )
+7. **추가 설명이나 주석 없이 순수한 JSON만 반환하세요**
+8. **어떤 상황에서도 분석을 거부하지 말고, 최소한 빈 JSON 배열이라도 반환하세요**
+9. **문서 내용이 불완전하거나 명확하지 않아도 분석을 시도하세요**
+10. **오류가 발생해도 JSON 형태로 오류 정보를 포함해서 반환하세요**"""
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    max_tokens=2000,
+                    temperature=0.0,
+                    top_p=0.9,
+                    frequency_penalty=0.1,
+                    presence_penalty=0.1
+                )
+            
+            response = self._retry_api_call_sync(api_call)
             
             if response and response.choices:
                 result = response.choices[0].message.content or ""
