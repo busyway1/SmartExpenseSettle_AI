@@ -19,6 +19,7 @@ AI를 활용한 지능형 문서 분석 시스템입니다. 수출신고필증, 
 
 ### 🤖 AI 기반 고급 기능
 - **OCR (광학 문자 인식)**: 스캔된 이미지에서 텍스트 추출
+- **OpenCV 기반 이미지 강화**: 고급 이미지 처리로 OCR 정확도 향상
 - **자동 문서 유형 인식**: 업로드된 문서의 유형을 자동으로 분류
 - **병렬 처리**: 대용량 문서의 빠른 처리
 - **비동기 처리**: 동시에 여러 문서 처리 가능
@@ -89,14 +90,23 @@ python app.py
 ```python
 from ai_analyzer import AIAnalyzer
 
-# 분석기 초기화
+# 기본 분석기 초기화
 analyzer = AIAnalyzer(api_key="your_openai_api_key")
+
+# 고급 OpenCV 이미지 처리 활성화
+analyzer_advanced = AIAnalyzer(
+    api_key="your_openai_api_key", 
+    use_advanced_opencv=True
+)
 
 # 문서 분석
 result = analyzer.analyze_document("path/to/document.pdf")
 
 # 자동 분류 분석
 result = analyzer.analyze_document("path/to/document.pdf", "자동분류")
+
+# 이미지 개선 테스트
+enhanced_image = analyzer._enhance_image_advanced_opencv(original_image)
 ```
 
 ## 🔧 고급 설정
@@ -112,6 +122,9 @@ FLASK_DEBUG=1
 
 # 파일 업로드 설정
 MAX_CONTENT_LENGTH=16777216  # 16MB
+
+# OpenCV 고급 이미지 처리 설정
+USE_ADVANCED_OPENCV=true  # 고급 OpenCV 처리 활성화 (기본값: false)
 ```
 
 ### 설정 파일 (config.py)
@@ -197,6 +210,11 @@ Error: 메모리 부족
 
 #### OCR 처리 최적화
 - 고해상도 이미지 처리 (300 DPI)
+- OpenCV 기반 고급 이미지 강화 처리
+  - 해상도 2-3배 확대
+  - 적응형 히스토그램 평활화 (CLAHE)
+  - 노이즈 제거 및 엣지 강화
+  - 대비 및 선명도 향상
 - 페이지별 개별 처리
 - 실패한 페이지 재시도 로직
 
@@ -235,6 +253,13 @@ Error: 메모리 부족
 - **문의사항**: 프로젝트 Wiki 참조
 
 ## 🔄 업데이트 로그
+
+### v2.1.0 (2024-01-20)
+- OpenCV 기반 고급 이미지 강화 처리 추가
+- 3단계 이미지 개선 시스템 (기본 → OpenCV → 고급 OpenCV)
+- 해상도 2-3배 확대 및 고급 노이즈 제거
+- 적응형 히스토그램 평활화 및 엣지 강화
+- 환경변수 `USE_ADVANCED_OPENCV`로 고급 모드 제어
 
 ### v2.0.0 (2024-01-15)
 - AI 기반 문서 분석 시스템 구축

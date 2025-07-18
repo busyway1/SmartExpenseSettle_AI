@@ -17,7 +17,7 @@ import re
 from prompts.document_type_classification import get_document_type_classification_prompt
 
 class AIAnalyzer:
-    def __init__(self, api_key: str = ""):
+    def __init__(self, api_key: str = "", use_advanced_opencv: bool = False):
         """AI 분석기 초기화"""
         self.api_key = api_key or os.getenv('OPENAI_API_KEY', "")
         if self.api_key:
@@ -34,6 +34,11 @@ class AIAnalyzer:
         # 속도 제한 관련 설정
         self.max_retries = 5
         self.base_delay = 1.0  # 기본 대기 시간 (초)
+        
+        # 이미지 개선 설정
+        self.use_advanced_opencv = use_advanced_opencv
+        if use_advanced_opencv:
+            print("고급 OpenCV 이미지 개선 모드가 활성화되었습니다.")
     
     async def _retry_api_call_async(self, api_call_func, *args, **kwargs):
         """비동기 API 호출에 대한 재시도 로직"""
@@ -125,8 +130,11 @@ class AIAnalyzer:
             return image  # 오류 시 원본 반환
     
     def _enhance_image_with_opencv(self, image: Image.Image) -> Image.Image:
-        """OpenCV를 사용한 고급 이미지 개선 (선택적)"""
+        """OpenCV를 사용한 고급 이미지 개선 (강화된 버전)"""
         try:
+            import cv2
+            import numpy as np
+            
             # PIL Image를 OpenCV 형식으로 변환
             img_array = np.array(image)
             
@@ -136,20 +144,48 @@ class AIAnalyzer:
             else:
                 gray = img_array
             
-            # 1. 적응형 히스토그램 평활화 (CLAHE)
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-            enhanced = clahe.apply(gray)
+            # 1. 해상도 향상 (2배 확대)
+            height, width = gray.shape
+            enhanced = cv2.resize(gray, (width * 2, height * 2), interpolation=cv2.INTER_CUBIC)
             
-            # 2. 바이래터럴 필터로 노이즈 제거하면서 엣지 보존
-            enhanced = cv2.bilateralFilter(enhanced, 9, 75, 75)
+            # 2. 적응형 히스토그램 평활화 (CLAHE) - 강화된 버전
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+            enhanced = clahe.apply(enhanced)
             
-            # 3. 언샤프 마스크로 선명도 향상
+            # 3. 바이래터럴 필터로 노이즈 제거하면서 엣지 보존
+            enhanced = cv2.bilateralFilter(enhanced, 15, 80, 80)
+            
+            # 4. 가우시안 블러로 노이즈 제거
+            enhanced = cv2.GaussianBlur(enhanced, (3, 3), 0)
+            
+            # 5. 언샤프 마스크로 선명도 향상 (강화된 버전)
             kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
             enhanced = cv2.filter2D(enhanced, -1, kernel)
             
-            # 4. 모폴로지 연산으로 텍스트 선명도 향상
-            kernel = np.ones((1,1), np.uint8)
+            # 6. 모폴로지 연산으로 텍스트 선명도 향상
+            kernel = np.ones((2,2), np.uint8)
             enhanced = cv2.morphologyEx(enhanced, cv2.MORPH_CLOSE, kernel)
+            
+            # 7. 엣지 강화
+            laplacian = cv2.Laplacian(enhanced, cv2.CV_64F)
+            laplacian = np.uint8(np.absolute(laplacian))
+            # 엣지 강화를 위한 가중치 합성
+            enhanced = np.clip(enhanced.astype(np.float32) * 1.5 - laplacian.astype(np.float32) * 0.5, 0, 255).astype(np.uint8)
+            
+            # 8. 대비 향상 (히스토그램 스트레칭)
+            p2, p98 = np.percentile(enhanced, (2, 98))
+            enhanced = np.clip((enhanced - p2) / (p98 - p2) * 255, 0, 255).astype(np.uint8)
+            
+            # 9. 노이즈 제거를 위한 중간값 필터
+            enhanced = cv2.medianBlur(enhanced, 3)
+            
+            # 10. 텍스트 영역 강화를 위한 적응형 임계값
+            adaptive_thresh = cv2.adaptiveThreshold(
+                enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+            )
+            
+            # 11. 원본과 적응형 임계값 결과를 블렌딩
+            enhanced = cv2.addWeighted(enhanced, 0.7, adaptive_thresh, 0.3, 0)
             
             # OpenCV 배열을 PIL Image로 변환
             enhanced_image = Image.fromarray(enhanced)
@@ -158,6 +194,79 @@ class AIAnalyzer:
             
         except Exception as e:
             print(f"OpenCV 이미지 개선 중 오류: {str(e)}")
+            return image  # 오류 시 원본 반환
+    
+    def _enhance_image_advanced_opencv(self, image: Image.Image) -> Image.Image:
+        """OpenCV를 사용한 최고급 이미지 개선 (문서 텍스트 최적화)"""
+        try:
+            import cv2
+            import numpy as np
+            
+            # PIL Image를 OpenCV 형식으로 변환
+            img_array = np.array(image)
+            
+            # 그레이스케일 변환
+            if len(img_array.shape) == 3:
+                gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+            else:
+                gray = img_array
+            
+            # 1. 해상도 향상 (3배 확대)
+            height, width = gray.shape
+            enhanced = cv2.resize(gray, (width * 3, height * 3), interpolation=cv2.INTER_CUBIC)
+            
+            # 2. 노이즈 제거 (비선형 필터)
+            enhanced = cv2.fastNlMeansDenoising(enhanced, None, 10, 7, 21)
+            
+            # 3. 적응형 히스토그램 평활화 (CLAHE) - 강화된 버전
+            clahe = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8,8))
+            enhanced = clahe.apply(enhanced)
+            
+            # 4. 바이래터럴 필터로 노이즈 제거하면서 엣지 보존
+            enhanced = cv2.bilateralFilter(enhanced, 25, 100, 100)
+            
+            # 5. 가우시안 블러로 노이즈 제거
+            enhanced = cv2.GaussianBlur(enhanced, (3, 3), 0)
+            
+            # 6. 언샤프 마스크로 선명도 향상 (강화된 버전)
+            kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+            enhanced = cv2.filter2D(enhanced, -1, kernel)
+            
+            # 7. 모폴로지 연산으로 텍스트 선명도 향상
+            kernel = np.ones((2,2), np.uint8)
+            enhanced = cv2.morphologyEx(enhanced, cv2.MORPH_CLOSE, kernel)
+            
+            # 8. 엣지 강화 (라플라시안)
+            laplacian = cv2.Laplacian(enhanced, cv2.CV_64F)
+            laplacian = np.uint8(np.absolute(laplacian))
+            enhanced = np.clip(enhanced.astype(np.float32) * 1.8 - laplacian.astype(np.float32) * 0.8, 0, 255).astype(np.uint8)
+            
+            # 9. 대비 향상 (히스토그램 스트레칭)
+            p1, p99 = np.percentile(enhanced, (1, 99))
+            enhanced = np.clip((enhanced - p1) / (p99 - p1) * 255, 0, 255).astype(np.uint8)
+            
+            # 10. 노이즈 제거를 위한 중간값 필터
+            enhanced = cv2.medianBlur(enhanced, 3)
+            
+            # 11. 텍스트 영역 강화를 위한 적응형 임계값
+            adaptive_thresh = cv2.adaptiveThreshold(
+                enhanced, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 3
+            )
+            
+            # 12. 원본과 적응형 임계값 결과를 블렌딩
+            enhanced = np.clip(enhanced.astype(np.float32) * 0.6 + adaptive_thresh.astype(np.float32) * 0.4, 0, 255).astype(np.uint8)
+            
+            # 13. 최종 선명도 향상
+            kernel = np.array([[0,-1,0], [-1,5,-1], [0,-1,0]])
+            enhanced = cv2.filter2D(enhanced, -1, kernel)
+            
+            # OpenCV 배열을 PIL Image로 변환
+            enhanced_image = Image.fromarray(enhanced)
+            
+            return enhanced_image
+            
+        except Exception as e:
+            print(f"고급 OpenCV 이미지 개선 중 오류: {str(e)}")
             return image  # 오류 시 원본 반환
     
     async def extract_text_from_file_async(self, file_path: str) -> str:
@@ -247,7 +356,7 @@ class AIAnalyzer:
             
             # 5단계: 스캔된 이미지 PDF의 경우 OCR 처리 (선택적)
             print("일반 텍스트 추출 실패. PDF를 이미지로 변환하여 Vision API로 처리합니다.")
-            return self._extract_text_from_pdf_as_image(pdf_path)
+            return self._extract_text_from_pdf_as_image(pdf_path, use_opencv_enhancement=True)
             
         except Exception as e:
             return f"PDF 텍스트 추출 오류: {str(e)}"
@@ -1851,7 +1960,7 @@ class AIAnalyzer:
         
         return files 
 
-    async def _extract_text_from_pdf_as_image_async(self, pdf_path: str) -> str:
+    async def _extract_text_from_pdf_as_image_async(self, pdf_path: str, use_opencv_enhancement: bool = True) -> str:
         """PDF를 이미지로 변환하여 Vision API로 텍스트 추출 (비동기 병렬처리, 진행상황 로그 추가)"""
         try:
             if not self.client:
@@ -1870,8 +1979,21 @@ class AIAnalyzer:
                         print(f"[{page_num}/{total_pages}] {page_num}페이지 이미지 변환 중...")
                         img = page.to_image(resolution=300)
                         if img:
-                            # 이미지 개선 적용
-                            enhanced_img = self._enhance_image_for_ocr(img.original)
+                            # 이미지 개선 적용 (OpenCV 강화 버전 선택 가능)
+                            if use_opencv_enhancement:
+                                try:
+                                    if self.use_advanced_opencv:
+                                        enhanced_img = self._enhance_image_advanced_opencv(img.original)
+                                        print(f"[{page_num}/{total_pages}] 고급 OpenCV 이미지 처리 적용")
+                                    else:
+                                        enhanced_img = self._enhance_image_with_opencv(img.original)
+                                        print(f"[{page_num}/{total_pages}] OpenCV 강화 이미지 처리 적용")
+                                except Exception as e:
+                                    print(f"[{page_num}/{total_pages}] OpenCV 처리 실패, 기본 개선 적용: {str(e)}")
+                                    enhanced_img = self._enhance_image_for_ocr(img.original)
+                            else:
+                                enhanced_img = self._enhance_image_for_ocr(img.original)
+                            
                             img_bytes = io.BytesIO()
                             enhanced_img.save(img_bytes, format='PNG', quality=95)
                             img_bytes.seek(0)
@@ -1941,7 +2063,7 @@ class AIAnalyzer:
         except Exception as e:
             return f"이미지 개선 실패: {str(e)}"
     
-    def _extract_text_from_pdf_as_image(self, pdf_path: str) -> str:
+    def _extract_text_from_pdf_as_image(self, pdf_path: str, use_opencv_enhancement: bool = True) -> str:
         """동기 함수에서 비동기 이미지 추출 함수 호출"""
         import asyncio
-        return asyncio.run(self._extract_text_from_pdf_as_image_async(pdf_path))
+        return asyncio.run(self._extract_text_from_pdf_as_image_async(pdf_path, use_opencv_enhancement))

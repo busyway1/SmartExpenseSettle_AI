@@ -160,7 +160,9 @@ def delete_file(filename):
 def analyze_page():
     """AI 분석 페이지"""
     from ai_analyzer import AIAnalyzer
-    analyzer = AIAnalyzer()
+    # 고급 OpenCV 옵션을 환경변수에서 읽기
+    use_advanced_opencv = os.getenv('USE_ADVANCED_OPENCV', 'false').lower() == 'true'
+    analyzer = AIAnalyzer(use_advanced_opencv=use_advanced_opencv)
     files = analyzer.get_available_files()
     return render_template('analyze.html', files=files)
 
@@ -183,8 +185,9 @@ def api_analyze():
         if not os.path.exists(file_path):
             return jsonify({'success': False, 'error': '파일을 찾을 수 없습니다.'})
         
-        # AI 분석 수행
-        analyzer = AIAnalyzer()
+        # AI 분석 수행 (고급 OpenCV 옵션 적용)
+        use_advanced_opencv = os.getenv('USE_ADVANCED_OPENCV', 'false').lower() == 'true'
+        analyzer = AIAnalyzer(use_advanced_opencv=use_advanced_opencv)
         
         if use_async:
             # 비동기 분석 수행 (기본값)
