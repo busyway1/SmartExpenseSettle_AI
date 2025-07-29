@@ -60,20 +60,37 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. OpenAI API 키 설정
+### 4. API 키 설정
 환경 변수로 설정하거나 애플리케이션 내에서 설정:
 
+**GPT-4o 버전 (기본):**
 ```bash
 # Windows
-set OPENAI_API_KEY=your_api_key_here
+set OPENAI_API_KEY=your_openai_api_key_here
 
 # macOS/Linux
-export OPENAI_API_KEY=your_api_key_here
+export OPENAI_API_KEY=your_openai_api_key_here
+```
+
+**Claude Sonnet 4 버전:**
+```bash
+# Windows
+set ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# macOS/Linux
+export ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ```
 
 ### 5. 애플리케이션 실행
+
+**GPT-4o 버전 (기본):**
 ```bash
 python app.py
+```
+
+**Claude Sonnet 4 버전:**
+```bash
+python claude_app.py
 ```
 
 웹 브라우저에서 `http://localhost:5000`으로 접속

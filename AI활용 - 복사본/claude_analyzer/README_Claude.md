@@ -1,6 +1,6 @@
 # Claude AI 기반 문서 분석기
 
-이 프로젝트는 Anthropic의 Claude-3-5-sonnet 모델을 사용하여 문서를 분석하는 AI 시스템입니다.
+이 프로젝트는 Anthropic의 Claude Sonnet 4 모델을 사용하여 문서를 분석하는 AI 시스템입니다.
 
 ## 📁 폴더 구조
 
@@ -17,7 +17,7 @@ claude_analyzer/
 
 ## 주요 특징
 
-- **Claude-3-5-sonnet 모델 사용**: 최신 Claude 모델을 활용한 정확한 문서 분석
+- **Claude Sonnet 4 모델 사용**: 최신 Claude 모델을 활용한 정확한 문서 분석
 - **기존 프롬프트 시스템 통합**: prompts 폴더의 검증된 프롬프트들을 그대로 활용
 - **다양한 문서 형식 지원**: PDF, 이미지 파일 등
 - **OCR 기능**: 스캔된 문서에서 텍스트 추출
@@ -137,13 +137,13 @@ python claude_example_usage.py
 
 | 기능 | GPT-4o 버전 | Claude 버전 |
 |------|-------------|-------------|
-| 모델 | GPT-4o | Claude-3-5-sonnet |
+| 모델 | GPT-4o | Claude Sonnet 4 |
 | API 클라이언트 | OpenAI | Anthropic |
 | 이미지 처리 | Vision API | Claude Vision |
 | 프롬프트 시스템 | 동일한 prompts 폴더 사용 | 동일한 prompts 폴더 사용 |
 | 문서 타입 분류 | 동일한 프롬프트 사용 | 동일한 프롬프트 사용 |
 | 비용 | OpenAI 요금 | Anthropic 요금 |
-| 성능 | GPT-4o 수준 | Claude-3-5-sonnet 수준 |
+| 성능 | GPT-4o 수준 | Claude Sonnet 4 수준 |
 
 ## 프롬프트 시스템
 
