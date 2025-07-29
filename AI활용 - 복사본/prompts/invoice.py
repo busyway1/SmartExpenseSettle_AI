@@ -26,9 +26,9 @@ def get_invoice_prompt(text: str, file_name: str = "", page_number: int | None =
 
 **추출할 필드 (14개만):**
 1. 업체명
-    - 보통 페이지 상단의 회사명 ((주), 주식회사 등)
-    - 거래처 혹은 'To.' 가 아닌, 해당 Invoice를 발행한 회사명을 가져와야 합니다.
-    - 보통 회사 로고 이미지 옆에 기재되어 있는 경우가 많습니다.
+    - 보통 페이지 최상단에 기재된 회사명 ((주), 주식회사, Co,. 등)
+    - 거래처, Customer, 'To.' 가 아닌, 해당 Invoice를 발행한 회사명을 가져와야 합니다.
+    - 보통 회사 로고 이미지와 함께 기재되어 있는 경우가 많습니다.
 2. 일자
     - 일자, date 등 확인
     - 일자는 YYYY-MM-DD 형식으로 추출해주세요.
@@ -50,8 +50,8 @@ def get_invoice_prompt(text: str, file_name: str = "", page_number: int | None =
     - 품목명 : 내역, Description, 품목, 품목명 등으로 식별됨.
     - 원화공급가 : 공급가액, 공급가, 공급가액(KRW), KRW 등으로 식별됨.
     - 부가세 : 부가세액, 부가세, 부가세액(KRW), VAT 등으로 식별됨.
-11. 공급가액Total: 원화공급가를 식별한 열의 Total(합계) 금액 확인
-12. 부가세액Total: 부가세를 식별한 열의 Total(합계) 금액 확인
+11. 공급가액Total: 원화공급가를 식별한 열의 Total(합계) 금액 확인 (Sub total, total이 전부 존재하는 경우에는 Sub total이 아닌 total을 읽어와야 합니다.)
+12. 부가세액Total: 부가세를 식별한 열의 Total(합계) 금액 확인 (Sub total, total이 전부 존재하는 경우에는 Sub total이 아닌 total을 읽어와야 합니다.)
 13. 파일명: "{file_name}"
 14. 페이지번호: {page_number if page_number is not None else "실제 파일의 페이지 번호 (예: 1, 2, 3...)"}
 
