@@ -60,7 +60,9 @@ def upload_file():
             file.save(file_path)
             
             # Claude 분석기 초기화 (고품질 이미지 전처리 활성화, 속도 제한 비활성화)
-            api_key = os.getenv('ANTHROPIC_API_KEY', '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')
+            api_key = os.getenv('ANTHROPIC_API_KEY')
+            if not api_key:
+                return jsonify({'error': 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.'}), 500
             analyzer = ClaudeAIAnalyzer(api_key=api_key, use_advanced_opencv=True, enable_rate_limit=False)
             
             # 문서 분석
@@ -130,7 +132,9 @@ def analyze_file(filename):
             return jsonify({'error': '파일을 찾을 수 없습니다.'}), 404
         
         # Claude 분석기 초기화 (고품질 이미지 전처리 활성화, 속도 제한 비활성화)
-        api_key = os.getenv('ANTHROPIC_API_KEY', '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')
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.'}), 500
         analyzer = ClaudeAIAnalyzer(api_key=api_key, use_advanced_opencv=True, enable_rate_limit=False)
         
         # 문서 분석
