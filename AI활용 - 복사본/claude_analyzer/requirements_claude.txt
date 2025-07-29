@@ -1,0 +1,25 @@
+# Claude AI 분석기용 의존성
+anthropic>=0.18.0
+aiohttp>=3.8.0
+asyncio
+
+# PDF 처리 라이브러리
+PyMuPDF>=1.23.0
+pdfplumber>=0.10.0
+PyPDF2>=3.0.0
+python-docx>=0.8.11
+
+# 이미지 처리 (OCR용)
+Pillow>=10.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# 웹 프레임워크
+Flask>=2.3.0
+
+# 파일 처리 및 유틸리티
+python-multipart>=0.0.6
+
+# 개발 및 테스트 (선택사항)
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0 

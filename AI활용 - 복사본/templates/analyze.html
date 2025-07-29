@@ -504,7 +504,6 @@
                     let parsedResult = null;
                     try {
                         parsedResult = JSON.parse(result.analysis_result);
-                        formattedResult = JSON.stringify(parsedResult, null, 2);
                         
                         // 개별 문서별로 구분하여 표시
                         let structuredHtml = '';
@@ -519,18 +518,25 @@
                                     structuredHtml += `<div style="padding: 15px; border-bottom: 1px solid #e9ecef; ${index === documents.length - 1 ? 'border-bottom: none;' : ''}">`;
                                     structuredHtml += `<h5 style="margin: 0 0 10px 0; color: #666;">문서 ${doc.document_index || index + 1}</h5>`;
                                     
-                                    // 각 문서의 정보를 테이블 형태로 표시
-                                    let docInfoHtml = '<table style="width: 100%; border-collapse: collapse;">';
-                                    for (const [key, value] of Object.entries(doc)) {
-                                        if (key !== 'document_index') {
-                                            docInfoHtml += '<tr>';
-                                            docInfoHtml += `<td style="padding: 8px; border: 1px solid #e9ecef; background: #f8f9fa; font-weight: 600; width: 30%;">${key}</td>`;
-                                            docInfoHtml += `<td style="padding: 8px; border: 1px solid #e9ecef;">${value}</td>`;
-                                            docInfoHtml += '</tr>';
+                                    // 각 문서의 정보를 표시 (줄바꿈 처리)
+                                    if (doc.analysis) {
+                                        // 분석 결과가 있으면 줄바꿈 처리하여 표시
+                                        const formattedAnalysis = doc.analysis.replace(/\n/g, '<br>');
+                                        structuredHtml += `<div style="background: #f8f9fa; padding: 15px; border-radius: 5px; white-space: pre-wrap; line-height: 1.6;">${formattedAnalysis}</div>`;
+                                    } else {
+                                        // 기존 테이블 형태 표시
+                                        let docInfoHtml = '<table style="width: 100%; border-collapse: collapse;">';
+                                        for (const [key, value] of Object.entries(doc)) {
+                                            if (key !== 'document_index') {
+                                                docInfoHtml += '<tr>';
+                                                docInfoHtml += `<td style="padding: 8px; border: 1px solid #e9ecef; background: #f8f9fa; font-weight: 600; width: 30%;">${key}</td>`;
+                                                docInfoHtml += `<td style="padding: 8px; border: 1px solid #e9ecef; white-space: pre-wrap;">${value}</td>`;
+                                                docInfoHtml += '</tr>';
+                                            }
                                         }
+                                        docInfoHtml += '</table>';
+                                        structuredHtml += docInfoHtml;
                                     }
-                                    docInfoHtml += '</table>';
-                                    structuredHtml += docInfoHtml;
                                     structuredHtml += `</div>`;
                                 });
                                 
@@ -540,10 +546,14 @@
                         
                         if (structuredHtml) {
                             formattedResult = structuredHtml;
+                        } else {
+                            // 구조화된 HTML이 없으면 JSON을 포맷팅하여 표시
+                            formattedResult = `<pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; white-space: pre-wrap;">${JSON.stringify(parsedResult, null, 2)}</pre>`;
                         }
                     } catch (e) {
-                        // JSON 파싱 실패시 원본 텍스트 사용
+                        // JSON 파싱 실패시 원본 텍스트 사용 (줄바꿈 처리)
                         console.log('JSON 파싱 실패, 원본 텍스트 사용:', e);
+                        formattedResult = `<pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; white-space: pre-wrap; line-height: 1.6;">${result.analysis_result}</pre>`;
                     }
                     
                     analysisResults.innerHTML = `
